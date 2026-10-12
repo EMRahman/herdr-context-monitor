@@ -32,3 +32,10 @@ Add to `~/.config/herdr/config.toml`:
 [ui.sidebar.agents]
 format = ["$mark", " ", "$title", " · ", "$cwd", " ", { token = "$ctx_pct", suffix = "%", rules = [{ gt = 50, fg = "#ef4444", bold = true }] }]
 ```
+
+## Web UI Integration
+
+The monitor emits token metadata to `pane.tokens.ctx_pct` via `herdr pane report-metadata`.
+
+Visual badge support in the Herdr Web UI sidebar (rendering glanceable context pills with red warning alerts when context usage exceeds 50%) is implemented in [herdr-web-ui](https://github.com/EMRahman/herdr-web-ui) via branch [`feat/sidebar-context-badge`](https://github.com/EMRahman/herdr-web-ui/tree/feat/sidebar-context-badge).
+
