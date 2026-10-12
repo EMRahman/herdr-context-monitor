@@ -33,9 +33,39 @@ Add to `~/.config/herdr/config.toml`:
 format = ["$mark", " ", "$title", " · ", "$cwd", " ", { token = "$ctx_pct", suffix = "%", rules = [{ gt = 50, fg = "#ef4444", bold = true }] }]
 ```
 
-## Web UI Integration
+## Web UI Integration (Companion Dependency)
 
 The monitor emits token metadata to `pane.tokens.ctx_pct` via `herdr pane report-metadata`.
 
-Visual badge support in the Herdr Web UI sidebar (rendering glanceable context pills with red warning alerts when context usage exceeds 50%) is implemented in [herdr-web-ui](https://github.com/EMRahman/herdr-web-ui) via branch [`feat/sidebar-context-badge`](https://github.com/EMRahman/herdr-web-ui/tree/feat/sidebar-context-badge).
+* **Stock Herdr Web UI**: Does not render context percentages in the browser.
+* **[EMRahman/herdr-web-ui](https://github.com/EMRahman/herdr-web-ui)**: Adds first-class visual badge support in the sidebar agent roster and composer ring (merged via [PR #2](https://github.com/EMRahman/herdr-web-ui/pull/2)), alerting in bold red when context usage exceeds 50%.
+
+### Architecture & Relationship
+
+```
+┌─────────────────────────────────┐
+│     herdr-context-monitor       │  (Data Provider)
+│   • Runs `monitor.py` daemon    │
+│   • Emits `pane.tokens.ctx_pct` │
+└────────────────┬────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────┐
+│     Herdr Pane Metadata Bus     │
+└───────────┬──────────────┬──────┘
+            │              │
+            ▼              ▼
+┌────────────────┐  ┌──────────────────────────────────┐
+│   Herdr TUI    │  │       EMRahman/herdr-web-ui      │  (Visual Consumer)
+│  (config.toml) │  │   • Renders ContextBadge in      │
+│  Works natively│  │     AgentSidebar.tsx             │
+└────────────────┘  │   • Highlights > 50% context rot │
+                    └──────────────────────────────────┘
+```
+
+To enable the Web UI badges alongside this plugin:
+```bash
+herdr plugin install github:EMRahman/herdr-web-ui
+```
+
 
