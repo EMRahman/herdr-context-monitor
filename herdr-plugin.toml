@@ -1,0 +1,14 @@
+id = "context-monitor"
+name = "Agent Context Monitor"
+version = "0.1.0"
+min_herdr_version = "0.7.5"
+description = "Monitors context % for Claude Code, Codex, and Antigravity CLI and reports it to the agent sidebar"
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "refresh"
+title = "Refresh Context Metrics"
+command = ["python3", "monitor.py", "--once"]
+
+[[startup]]
+command = ["python3", "monitor.py"]
