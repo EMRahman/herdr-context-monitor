@@ -209,7 +209,12 @@ def update_all_panes():
 
 def main():
     once = "--once" in sys.argv
+    # The startup hook runs as a child of the Herdr server. When the server
+    # exits we are reparented, so stop rather than outlive it as a stale copy.
+    parent_pid = os.getppid()
     while True:
+        if not once and os.getppid() != parent_pid:
+            break
         try:
             update_all_panes()
         except Exception:
