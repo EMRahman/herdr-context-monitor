@@ -2,9 +2,7 @@
 
 Herdr plugin to monitor and report real-time context window usage for active AI agents (Claude Code, OpenAI Codex, Antigravity CLI).
 
-<p align="center">
-  <img src="docs/sidebar.png" alt="Herdr agent sidebar showing context usage under each agent, with 52% in bold red">
-</p>
+<img src="docs/sidebar.png" width="188" alt="Herdr agent sidebar showing context usage under each agent, with 52% in bold red">
 
 ## Features
 
@@ -78,6 +76,8 @@ rows = [
   ]
 ]
 ```
+
+<img src="docs/sidebar.png" width="188" alt="The resulting sidebar: each agent has a second row with its context usage">
 
 The second row shows an icon and a single percentage, such as `⛁ 3%`. Herdr
 puts a `·` between tokens in a row, so the monitor reports the icon and
