@@ -11,7 +11,7 @@ Herdr plugin to monitor and report real-time context window usage for active AI 
   - **Claude Code**: 200k / 1M token window limit (including local `/context` outputs)
   - **OpenAI Codex**: 128k / rollout token window limit
 - **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
-- **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%).
+- **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
 - **Web UI Badge**: Displays context pills in the Herdr Web UI sidebar agent roster.
 
 ## Installation
@@ -109,6 +109,32 @@ does not replace the server restart after installation or upgrade. The
 manifest's startup hook starts continuous monitoring when the Herdr server
 starts; attaching a client, reloading configuration, and enabling a plugin do
 not run startup hooks. Herdr does not supervise startup hooks as daemons.
+
+## Why highlight usage above 50%?
+
+Models get less reliable as their context fills, well before they reach the
+advertised limit. The 50% threshold is a practical rule of thumb for when to
+compact, summarise or start a fresh session, not a figure taken from any one
+study. The research behind it:
+
+- [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172)
+  (Liu et al., TACL 2024). Models use information at the start and end of
+  their input best, and much worse when it sits in the middle. The effect
+  grows with input length, even for long-context models.
+- [RULER: What's the Real Context Size of Your Long-Context Language Models?](https://arxiv.org/abs/2404.06654)
+  (Hsieh et al., NVIDIA, COLM 2024). Of 17 models that all claim at least 32K
+  tokens of context, only half perform satisfactorily at 32K.
+- [NoLiMa: Long-Context Evaluation Beyond Literal Matching](https://arxiv.org/abs/2502.05167)
+  (Modarressi et al., ICML 2025). When the answer doesn't share wording with
+  the question, 11 of 13 models fall below half their short-context score by
+  32K tokens. GPT-4o drops from 99.3% to 69.7%.
+- [Context Rot: How Increasing Input Tokens Impacts LLM Performance](https://www.trychroma.com/research/context-rot)
+  (Chroma, July 2025). All 18 models tested, including Claude 4, GPT-4.1 and
+  Gemini 2.5, become less reliable as input grows, even on simple tasks.
+- [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+  (Anthropic, September 2025). Describes context as a finite "attention
+  budget" and recommends compaction, note-taking and sub-agents for long
+  tasks.
 
 ## Remote terminal access
 
