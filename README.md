@@ -8,7 +8,7 @@ Herdr plugin to monitor and report real-time context window usage for active AI 
   - **Antigravity CLI**: 1M token window limit
   - **Claude Code**: 200k / 1M token window limit (including local `/context` outputs)
   - **OpenAI Codex**: 128k / rollout token window limit
-- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), a percentage unit (`ctx_unit=%`), and a sidebar icon (`ctx_icon=⛁`) via `herdr pane report-metadata`.
+- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
 - **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%).
 - **Web UI Badge**: Displays context pills in the Herdr Web UI sidebar agent roster.
 
@@ -45,13 +45,13 @@ following its README". Agents should follow these steps in order:
 2. Back up `~/.config/herdr/config.toml`, then merge the row from
    [TUI Configuration](#tui-configuration) into it. Edit the existing
    `[ui.sidebar.agents]` section if there is one. Keep the user's other rows,
-   replace any `$ctx_pct` / `$ctx_unit` entries with the new row, and do not
-   add a second `[ui.sidebar.agents]` section. Validate with
-   `herdr config check`.
+   replace any `$ctx_pct`, `$ctx_unit`, `$ctx_icon` or `$ctx_display*`
+   entries with the new row, and do not add a second `[ui.sidebar.agents]`
+   section. Validate with `herdr config check`.
 3. Apply the configuration with `herdr server reload-config`.
 4. Publish a reading with
    `herdr plugin action invoke refresh --plugin context-monitor`, then confirm
-   `herdr api snapshot` contains `ctx_display` or `ctx_display_high`.
+   `herdr api snapshot` contains `ctx_label` or `ctx_label_high`.
 5. Ask the user to restart the Herdr server (`herdr server stop`, then run
    `herdr`) so continuous monitoring uses the installed code. Do not do this
    yourself: stopping the server ends every pane, including your own session.
@@ -69,23 +69,23 @@ Add to `~/.config/herdr/config.toml`:
 rows = [
   ["state_icon", "agent", "tab"],
   [
-    { token = "$ctx_icon", fg = "#71717a" },
-    { token = "$ctx_display", fg = "#71717a" },
-    { token = "$ctx_display_high", fg = "#ef4444", bold = true }
+    { token = "$ctx_label", fg = "#71717a" },
+    { token = "$ctx_label_high", fg = "#ef4444", bold = true }
   ]
 ]
 ```
 
-The second row shows an icon followed by a single percentage, such as
-`⛁ 3%`, without a separator between the number and its unit. The icon comes
-from the `ctx_icon` token; omit that entry to show the percentage alone. The
-monitor reports `ctx_display` at 50% or below and `ctx_display_high` above 50%,
-clearing the inactive token so only one is visible. This preserves red, bold
-styling for high usage. The numeric `ctx_pct` and legacy `ctx_unit` tokens
-remain available for existing consumers. Merge these rows into an existing
-`[ui.sidebar.agents]` section rather than adding a duplicate section. After
-updating the plugin and the configuration, use Herdr's **reload config** menu
-action to refresh the sidebar.
+The second row shows an icon and a single percentage, such as `⛁ 3%`. Herdr
+puts a `·` between tokens in a row, so the monitor reports the icon and
+percentage as one value. It reports `ctx_label` at 50% or below and
+`ctx_label_high` above 50%, clearing the inactive token so only one is visible.
+This preserves red, bold styling for high usage. To show the percentage without
+the icon, use `$ctx_display` and `$ctx_display_high` instead; they follow the
+same rule. The numeric `ctx_pct` and legacy `ctx_unit` tokens remain available
+for existing consumers. Merge these rows into an existing `[ui.sidebar.agents]`
+section rather than adding a duplicate section. After updating the plugin and
+the configuration, use Herdr's **reload config** menu action to refresh the
+sidebar.
 
 After installing or upgrading the plugin in an already running server, restart
 the Herdr server to start continuous monitoring with the installed code. An
