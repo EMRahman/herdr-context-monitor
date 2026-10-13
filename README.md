@@ -2,6 +2,10 @@
 
 Herdr plugin to monitor and report real-time context window usage for active AI agents (Claude Code, OpenAI Codex, Antigravity CLI).
 
+<p align="center">
+  <img src="docs/sidebar.png" alt="Herdr agent sidebar showing context usage under each agent, with 52% in bold red">
+</p>
+
 ## Features
 
 - **Continuous Context Tracking**: Periodically inspects active session transcripts and computes percentage usage against model context limits.
