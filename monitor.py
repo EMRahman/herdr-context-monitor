@@ -136,8 +136,9 @@ def parse_claude(state, entry):
         model = message.get("model")
         if model and not model.startswith("<"):
             if state["model"] and model != state["model"]:
-                # a window /context reported belongs to the model it ran under
+                # the window /context reported, and the peak that implies 1M, belong to the model they ran under
                 state["window"] = None
+                state["peak"] = 0
             state["model"] = model
         usage = message.get("usage")
         # a subagent's request fills its own context, not this one's
@@ -272,6 +273,7 @@ def get_codex_context_percent(session_id, cwd, title, may_guess, claimed, window
 
 
 def report_metadata(pane_id, pct):
+    """Reports pct to the pane's tokens; returns whether Herdr accepted it."""
     if pct is None:
         # unknown: clear the tokens so the sidebar shows nothing rather than a false 0%
         args = [arg for token in CTX_TOKENS for arg in ("--clear-token", token)]
@@ -288,8 +290,12 @@ def report_metadata(pane_id, pct):
             "--token", f"ctx_label{suffix}=⛁ {pct}%",
             "--clear-token", f"ctx_label{inactive_suffix}",
         ]
-    subprocess.run([HERDR_BIN, "pane", "report-metadata", str(pane_id), "--source", "context-monitor", *args],
-                   capture_output=True)
+    try:
+        res = subprocess.run([HERDR_BIN, "pane", "report-metadata", str(pane_id), "--source", "context-monitor", *args],
+                             capture_output=True)
+    except OSError:
+        return False
+    return res.returncode == 0
 
 
 def update_all_panes():
@@ -322,8 +328,8 @@ def update_all_panes():
         except Exception:
             pct = None
 
-        if pane_id not in _reported or _reported[pane_id] != pct:
-            report_metadata(pane_id, pct)
+        # a failed report is not remembered, so the next poll retries it
+        if (pane_id not in _reported or _reported[pane_id] != pct) and report_metadata(pane_id, pct):
             _reported[pane_id] = pct
 
     for pane_id in set(_reported) - open_ids:
