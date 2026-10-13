@@ -44,21 +44,31 @@ Add to `~/.config/herdr/config.toml`:
 rows = [
   ["state_icon", "agent", "tab"],
   [
-    { token = "$ctx_pct", fg = "#71717a", rules = [
-      { gt = 50, fg = "#ef4444", bold = true }
-    ] },
-    { token = "$ctx_unit", fg = "#71717a" }
+    { token = "$ctx_display", fg = "#71717a" },
+    { token = "$ctx_display_high", fg = "#ef4444", bold = true }
   ]
 ]
 ```
 
-The second row shows the context percentage with a `%` unit. Keep `ctx_pct`
-numeric so threshold rules and the Web UI continue to work. The unit is a
-separate metadata token because sidebar rows use tokens rather than literal
-text or a `suffix` field. Both tokens are reported together every five seconds.
+The second row shows a single percentage such as `3%`, without a separator
+between the number and its unit. The monitor reports `ctx_display` at 50% or
+below and `ctx_display_high` above 50%, clearing the inactive token so only one
+is visible. This preserves red, bold styling for high usage. The numeric
+`ctx_pct` and legacy `ctx_unit` tokens remain available for existing consumers.
 Merge these rows into an existing `[ui.sidebar.agents]` section rather than
 adding a duplicate section. After updating the plugin and the configuration,
 use Herdr's **reload config** menu action to refresh the sidebar.
+
+After installing into an already running server, publish the new tokens with:
+
+```bash
+herdr plugin action invoke refresh --plugin context-monitor
+```
+
+This action runs once. The manifest's startup hook starts continuous monitoring
+when the Herdr server starts; attaching a client, reloading configuration, and
+enabling a plugin do not run startup hooks. Herdr does not supervise startup
+hooks as daemons.
 
 ## Remote terminal access
 
