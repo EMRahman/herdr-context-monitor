@@ -218,3 +218,7 @@ herdr plugin install github:EMRahman/herdr-web-ui
 ```
 
 
+
+## License
+
+[MIT](LICENSE)
