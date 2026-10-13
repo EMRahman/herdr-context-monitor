@@ -168,16 +168,18 @@ def get_codex_context_percent(session_id, cwd, title=None):
 
 def report_metadata(pane_id, pct):
     pct = int(pct)
-    display_token = "ctx_display_high" if pct > 50 else "ctx_display"
-    inactive_token = "ctx_display" if pct > 50 else "ctx_display_high"
+    suffix = "_high" if pct > 50 else ""
+    inactive_suffix = "" if pct > 50 else "_high"
     subprocess.run([
         HERDR_BIN, "pane", "report-metadata", str(pane_id),
         "--source", "context-monitor",
         "--token", f"ctx_pct={int(pct)}",
         "--token", "ctx_unit=%",
-        "--token", "ctx_icon=⛁",
-        "--token", f"{display_token}={pct}%",
-        "--clear-token", inactive_token
+        "--token", f"ctx_display{suffix}={pct}%",
+        "--clear-token", f"ctx_display{inactive_suffix}",
+        # Herdr separates tokens in a row with a dot, so the icon shares a value.
+        "--token", f"ctx_label{suffix}=⛁ {pct}%",
+        "--clear-token", f"ctx_label{inactive_suffix}"
     ], capture_output=True)
 
 def update_all_panes():
