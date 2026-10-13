@@ -11,7 +11,7 @@ Herdr plugin to monitor and report real-time context window usage for active AI 
   - **Claude Code**: the window from the session's latest `/context` output, else a [configured](#context-window-sizes) window for the model, else 1M once usage passes 200k, else 200k
   - **OpenAI Codex**: the window Codex records in the transcript (`model_context_window`)
 - **Readings only for the right session**: each pane is matched by its Herdr session id. Without one, a reading is guessed only for the single pane of that agent in a folder. When no reading can be made, the pane shows nothing rather than `0%`.
-- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
+- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), the token counts behind them (`ctx_used=<tokens>`, `ctx_window=<tokens>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
 - **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
 - **Web UI Badge**: Displays context pills in the Herdr Web UI sidebar agent roster.
 

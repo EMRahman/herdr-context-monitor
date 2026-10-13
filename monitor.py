@@ -22,7 +22,7 @@ AGY_WINDOW = 1_000_000            # Gemini Pro / Flash 1M window
 CLAUDE_STANDARD_WINDOW = 200_000
 CLAUDE_LONG_WINDOW = 1_000_000    # a request past 200k can only have run in the 1M window
 
-CTX_TOKENS = ["ctx_pct", "ctx_unit", "ctx_display", "ctx_display_high", "ctx_label", "ctx_label_high"]
+CTX_TOKENS = ["ctx_pct", "ctx_unit", "ctx_display", "ctx_display_high", "ctx_label", "ctx_label_high", "ctx_used", "ctx_window"]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # The summary line Claude Code's /context prints, e.g. "107.9k/1m tokens (11%)"
@@ -71,6 +71,12 @@ def percent(tokens, window):
     return min(100, round(tokens * 100 / window))
 
 
+def reading(tokens, window):
+    """What the pane reports: the percentage, and the token counts behind it; None when unknown."""
+    pct = percent(tokens, window)
+    return None if pct is None else {"pct": pct, "used": int(tokens), "window": int(window)}
+
+
 def read_new_entries(path, parse, initial):
     """Feeds the JSON lines appended to path since the last poll to parse(state, entry); returns the state."""
     st = path.stat()
@@ -112,7 +118,7 @@ def parse_agy(state, entry):
         state["tokens"] = tokens
 
 
-def get_agy_context_percent(session_id):
+def get_agy_context(session_id):
     """Inspects Antigravity CLI's transcript logs."""
     if not session_id:
         return None
@@ -120,7 +126,7 @@ def get_agy_context_percent(session_id):
     if not log_path.exists():
         return None
     state = read_new_entries(log_path, parse_agy, lambda: {"tokens": None})
-    return percent(state["tokens"], AGY_WINDOW)
+    return reading(state["tokens"], AGY_WINDOW)
 
 
 def entry_text(entry):
@@ -191,7 +197,7 @@ def find_claude_transcript(session_id, cwd, may_guess, claimed):
     return None
 
 
-def get_claude_context_percent(session_id, cwd, may_guess, claimed, windows):
+def get_claude_context(session_id, cwd, may_guess, claimed, windows):
     """Inspects Claude Code project session transcripts."""
     path = find_claude_transcript(session_id, cwd, may_guess, claimed)
     if path is None:
@@ -202,7 +208,7 @@ def get_claude_context_percent(session_id, cwd, may_guess, claimed, windows):
         or configured_window(windows, state["model"])
         or (CLAUDE_LONG_WINDOW if state["peak"] > CLAUDE_STANDARD_WINDOW else CLAUDE_STANDARD_WINDOW)
     )
-    return percent(state["tokens"], window)
+    return reading(state["tokens"], window)
 
 
 def parse_codex(state, entry):
@@ -276,23 +282,23 @@ def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
     return None
 
 
-def get_codex_context_percent(session_id, cwd, title, may_guess, claimed, windows):
+def get_codex_context(session_id, cwd, title, may_guess, claimed, windows):
     """Inspects OpenAI Codex session usage."""
     path = find_codex_transcript(session_id, cwd, title, may_guess, claimed)
     if path is None:
         return None
     state = read_new_entries(path, parse_codex, lambda: {"tokens": None, "model": None, "window": None})
     # no stated or configured window means no reading, rather than one against a guess
-    return percent(state["tokens"], state["window"] or configured_window(windows, state["model"]))
+    return reading(state["tokens"], state["window"] or configured_window(windows, state["model"]))
 
 
-def report_metadata(pane_id, pct):
-    """Reports pct to the pane's tokens; returns whether Herdr accepted it."""
-    if pct is None:
+def report_metadata(pane_id, current):
+    """Reports a reading to the pane's tokens; returns whether Herdr accepted it."""
+    if current is None:
         # unknown: clear the tokens so the sidebar shows nothing rather than a false 0%
         args = [arg for token in CTX_TOKENS for arg in ("--clear-token", token)]
     else:
-        pct = int(pct)
+        pct = current["pct"]
         suffix = "_high" if pct > 50 else ""
         inactive_suffix = "" if pct > 50 else "_high"
         args = [
@@ -303,6 +309,9 @@ def report_metadata(pane_id, pct):
             # Herdr separates tokens in a row with a dot, so the icon shares a value.
             "--token", f"ctx_label{suffix}=⛁ {pct}%",
             "--clear-token", f"ctx_label{inactive_suffix}",
+            # the counts behind the percentage, for clients that show them (the web UI's tooltip)
+            "--token", f"ctx_used={current['used']}",
+            "--token", f"ctx_window={current['window']}",
         ]
     try:
         res = subprocess.run([HERDR_BIN, "pane", "report-metadata", str(pane_id), "--source", "context-monitor", *args],
@@ -331,20 +340,22 @@ def update_all_panes():
         open_ids.add(pane_id)
         may_guess = per_folder[(agent, cwd)] == 1
 
-        pct = None
+        current = None
         try:
             if agent == "agy":
-                pct = get_agy_context_percent(session_id)
+                current = get_agy_context(session_id)
             elif agent == "claude":
-                pct = get_claude_context_percent(session_id, cwd, may_guess, claimed, windows)
+                current = get_claude_context(session_id, cwd, may_guess, claimed, windows)
             elif agent == "codex":
-                pct = get_codex_context_percent(session_id, cwd, title, may_guess, claimed, windows)
+                current = get_codex_context(session_id, cwd, title, may_guess, claimed, windows)
         except Exception:
-            pct = None
+            current = None
 
+        # resent when what a client shows changes: the percentage, the window, or the use to the nearest 1k
+        shown = None if current is None else (current["pct"], round(current["used"] / 1000), current["window"])
         # a failed report is not remembered, so the next poll retries it
-        if (pane_id not in _reported or _reported[pane_id] != pct) and report_metadata(pane_id, pct):
-            _reported[pane_id] = pct
+        if (pane_id not in _reported or _reported[pane_id] != shown) and report_metadata(pane_id, current):
+            _reported[pane_id] = shown
 
     for pane_id in set(_reported) - open_ids:
         del _reported[pane_id]
