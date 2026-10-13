@@ -170,7 +170,8 @@ def report_metadata(pane_id, pct):
     subprocess.run([
         HERDR_BIN, "pane", "report-metadata", str(pane_id),
         "--source", "context-monitor",
-        "--token", f"ctx_pct={int(pct)}"
+        "--token", f"ctx_pct={int(pct)}",
+        "--token", "ctx_unit=%"
     ], capture_output=True)
 
 def update_all_panes():
