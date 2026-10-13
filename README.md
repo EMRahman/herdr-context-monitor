@@ -35,6 +35,31 @@ To try one before merging, add `--ref <branch-name>` to the install command.
 Updating the plugin does not modify your sidebar configuration; merge the
 configuration below separately.
 
+## Setup with a coding agent
+
+Ask an agent running on the Herdr host to "set up herdr-context-monitor
+following its README". Agents should follow these steps in order:
+
+1. Install or upgrade the plugin:
+   `herdr plugin install EMRahman/herdr-context-monitor --yes`
+2. Back up `~/.config/herdr/config.toml`, then merge the row from
+   [TUI Configuration](#tui-configuration) into it. Edit the existing
+   `[ui.sidebar.agents]` section if there is one. Keep the user's other rows,
+   replace any `$ctx_pct` / `$ctx_unit` entries with the new row, and do not
+   add a second `[ui.sidebar.agents]` section. Validate with
+   `herdr config check`.
+3. Apply the configuration with `herdr server reload-config`.
+4. Publish a reading with
+   `herdr plugin action invoke refresh --plugin context-monitor`, then confirm
+   `herdr api snapshot` contains `ctx_display` or `ctx_display_high`.
+5. Ask the user to restart the Herdr server (`herdr server stop`, then run
+   `herdr`) so continuous monitoring uses the installed code. Do not do this
+   yourself: stopping the server ends every pane, including your own session.
+
+Steps 2 and 3 apply to the machine that displays Herdr. If the user attaches
+with `herdr --remote`, repeat them on the client machine too (see
+[Remote terminal access](#remote-terminal-access)).
+
 ## TUI Configuration
 
 Add to `~/.config/herdr/config.toml`:
@@ -66,7 +91,8 @@ After installing or upgrading the plugin in an already running server, restart
 the Herdr server to start continuous monitoring with the installed code. An
 existing monitor keeps running the code it loaded before the upgrade, so it
 will not continuously publish the new display tokens. Reloading the sidebar
-configuration alone does not restart the monitor.
+configuration alone does not restart the monitor. The monitor exits when the
+server that started it stops, so a restart does not leave an old copy running.
 
 To publish a single reading immediately, invoke the refresh action:
 
