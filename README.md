@@ -6,10 +6,11 @@ Herdr plugin to monitor and report real-time context window usage for active AI 
 
 ## Features
 
-- **Continuous Context Tracking**: Periodically inspects active session transcripts and computes percentage usage against model context limits.
-  - **Antigravity CLI**: 1M token window limit
-  - **Claude Code**: 200k / 1M token window limit (including local `/context` outputs)
-  - **OpenAI Codex**: 128k / rollout token window limit
+- **Continuous Context Tracking**: Every 5 seconds, reads what each agent's session transcript gained and computes usage against its context window (see [Context window sizes](#context-window-sizes)).
+  - **Antigravity CLI**: 1M token window
+  - **Claude Code**: the window from the session's latest `/context` output, else a [configured](#context-window-sizes) window for the model, else 1M once usage passes 200k, else 200k
+  - **OpenAI Codex**: the window Codex records in the transcript (`model_context_window`)
+- **Readings only for the right session**: each pane is matched by its Herdr session id. Without one, a reading is guessed only for the single pane of that agent in a folder. When no reading can be made, the pane shows nothing rather than `0%`.
 - **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
 - **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
 - **Web UI Badge**: Displays context pills in the Herdr Web UI sidebar agent roster.
@@ -109,6 +110,34 @@ does not replace the server restart after installation or upgrade. The
 manifest's startup hook starts continuous monitoring when the Herdr server
 starts; attaching a client, reloading configuration, and enabling a plugin do
 not run startup hooks. Herdr does not supervise startup hooks as daemons.
+
+## Context window sizes
+
+Usage is a share of the model's context window. Codex records its window in
+the transcript; Claude Code does not, so for Claude the monitor uses, in order:
+
+1. the window from the session's most recent `/context` output, such as
+   `107.9k/1m tokens (11%)`
+2. a window configured for the model (below)
+3. 1M, once a request has gone past 200k tokens
+4. 200k
+
+If your Claude model runs with a 1M window, set it so readings are not five
+times too high before you run `/context`. Create `config.json` in the
+directory printed by `herdr plugin config-dir context-monitor`:
+
+```json
+{
+  "context_windows": {
+    "claude-opus-5-5": 1000000
+  }
+}
+```
+
+Keys are model id prefixes, and the longest matching prefix wins. The same
+setting supplies a Codex model's window when its transcript does not state
+one; without either, that Codex pane shows no reading. The file is read on
+every poll, so no restart is needed.
 
 ## Why highlight usage above 50%?
 
