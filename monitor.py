@@ -132,6 +132,9 @@ def entry_text(entry):
 
 def parse_claude(state, entry):
     if entry.get("type") == "assistant":
+        # a subagent's request runs on its own model and fills its own context, not this one's
+        if entry.get("isSidechain"):
+            return
         message = entry.get("message") or {}
         model = message.get("model")
         if model and not model.startswith("<"):
@@ -141,8 +144,7 @@ def parse_claude(state, entry):
                 state["peak"] = 0
             state["model"] = model
         usage = message.get("usage")
-        # a subagent's request fills its own context, not this one's
-        if usage and not entry.get("isSidechain"):
+        if usage:
             tokens = (
                 (usage.get("input_tokens") or 0)
                 + (usage.get("cache_read_input_tokens") or 0)
@@ -212,6 +214,9 @@ def parse_codex(state, entry):
         if info.get("model_context_window"):
             state["window"] = info["model_context_window"]
     elif entry.get("type") == "turn_context" and payload.get("model"):
+        if state["model"] and payload["model"] != state["model"]:
+            # the stated window belongs to the old model; a configured one applies until Codex states the new one
+            state["window"] = None
         state["model"] = payload["model"]
 
 
