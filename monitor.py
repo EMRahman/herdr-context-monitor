@@ -167,11 +167,16 @@ def get_codex_context_percent(session_id, cwd, title=None):
     return None
 
 def report_metadata(pane_id, pct):
+    pct = int(pct)
+    display_token = "ctx_display_high" if pct > 50 else "ctx_display"
+    inactive_token = "ctx_display" if pct > 50 else "ctx_display_high"
     subprocess.run([
         HERDR_BIN, "pane", "report-metadata", str(pane_id),
         "--source", "context-monitor",
         "--token", f"ctx_pct={int(pct)}",
-        "--token", "ctx_unit=%"
+        "--token", "ctx_unit=%",
+        "--token", f"{display_token}={pct}%",
+        "--clear-token", inactive_token
     ], capture_output=True)
 
 def update_all_panes():
