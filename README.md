@@ -59,16 +59,23 @@ Merge these rows into an existing `[ui.sidebar.agents]` section rather than
 adding a duplicate section. After updating the plugin and the configuration,
 use Herdr's **reload config** menu action to refresh the sidebar.
 
-After installing into an already running server, publish the new tokens with:
+After installing or upgrading the plugin in an already running server, restart
+the Herdr server to start continuous monitoring with the installed code. An
+existing monitor keeps running the code it loaded before the upgrade, so it
+will not continuously publish the new display tokens. Reloading the sidebar
+configuration alone does not restart the monitor.
+
+To publish a single reading immediately, invoke the refresh action:
 
 ```bash
 herdr plugin action invoke refresh --plugin context-monitor
 ```
 
-This action runs once. The manifest's startup hook starts continuous monitoring
-when the Herdr server starts; attaching a client, reloading configuration, and
-enabling a plugin do not run startup hooks. Herdr does not supervise startup
-hooks as daemons.
+This action runs once and does not start or restart continuous monitoring. It
+does not replace the server restart after installation or upgrade. The
+manifest's startup hook starts continuous monitoring when the Herdr server
+starts; attaching a client, reloading configuration, and enabling a plugin do
+not run startup hooks. Herdr does not supervise startup hooks as daemons.
 
 ## Remote terminal access
 
