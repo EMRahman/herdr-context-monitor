@@ -175,6 +175,7 @@ def report_metadata(pane_id, pct):
         "--source", "context-monitor",
         "--token", f"ctx_pct={int(pct)}",
         "--token", "ctx_unit=%",
+        "--token", "ctx_icon=⛁",
         "--token", f"{display_token}={pct}%",
         "--clear-token", inactive_token
     ], capture_output=True)
