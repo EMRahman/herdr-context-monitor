@@ -34,6 +34,8 @@ _tails = {}
 _touched = set()
 # Session id -> transcript path, so a session is searched for only once.
 _paths = {}
+# Codex rollout path -> its session_meta, which never changes once written.
+_codex_meta = {}
 # Pane id -> the percentage last reported (None once cleared), so unchanged readings are not resent.
 _reported = {}
 
@@ -221,12 +223,18 @@ def parse_codex(state, entry):
 
 
 def codex_session_meta(path):
+    if path in _codex_meta:
+        return _codex_meta[path]
     try:
         with open(path, "r", encoding="utf-8") as f:
             entry = json.loads(f.readline())
-        return entry.get("payload", {}) if entry.get("type") == "session_meta" else {}
     except Exception:
+        # a rollout still being created is read again on the next poll
         return {}
+    payload = entry.get("payload") if entry.get("type") == "session_meta" else None
+    meta = {"cwd": payload.get("cwd"), "id": payload.get("id")} if isinstance(payload, dict) else {}
+    _codex_meta[path] = meta
+    return meta
 
 
 def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
@@ -260,7 +268,8 @@ def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
                         for candidate in rollouts:
                             if d["id"] in candidate.name:
                                 return candidate
-    for candidate in rollouts[:50]:
+    # each rollout's first line is read once, so searching all of them stays cheap
+    for candidate in rollouts:
         meta = codex_session_meta(candidate)
         if meta.get("cwd") == cwd and meta.get("id") not in claimed:
             return candidate
