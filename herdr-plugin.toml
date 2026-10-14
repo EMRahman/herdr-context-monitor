@@ -2,7 +2,7 @@ id = "context-monitor"
 name = "Agent Context Monitor"
 version = "0.2.0"
 min_herdr_version = "0.7.5"
-description = "Monitors context % for Claude Code, Codex, and Antigravity CLI and reports it to the agent sidebar"
+description = "A minimal context meter: one Python file that shows each agent's context-window use in the sidebar, for Claude Code, Codex and Antigravity CLI"
 platforms = ["macos", "linux"]
 
 [[actions]]
