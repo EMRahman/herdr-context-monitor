@@ -1,5 +1,8 @@
 # herdr-context-monitor
 
+[![CI](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Herdr plugin to monitor and report real-time context window usage for active AI agents (Claude Code, OpenAI Codex, Antigravity CLI).
 
 <img src="docs/sidebar.png" width="188" alt="Herdr agent sidebar showing context usage under each agent, with 52% in bold red">
@@ -217,7 +220,15 @@ To enable the Web UI badges alongside this plugin:
 herdr plugin install github:EMRahman/herdr-web-ui
 ```
 
+## Tests
 
+The tests use only the Python standard library and run on Python 3.9 and later:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+CI runs them on Linux and macOS for every pull request.
 
 ## License
 
