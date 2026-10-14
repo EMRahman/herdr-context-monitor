@@ -24,13 +24,16 @@ beyond the reading itself.
 - **In the browser, one badge.** [herdr-web-ui](#web-ui-integration-companion-dependency)
   shows the same reading as a small badge next to each agent. Hover it to see
   what's left and the tokens behind it.
-- **One file, nothing to build.** `monitor.py` is under 400 lines, uses only
-  Python's standard library, and runs on the `python3` that macOS ships (3.9
-  or later).
+- **One file, nothing to build.** `monitor.py` is under 400 lines and uses
+  only Python's standard library. It needs `python3` 3.9 or later; on macOS,
+  the one from Xcode's Command Line Tools is enough.
 - **Cheap to run.** Every 5 seconds it reads only what each transcript gained
   since the last check, and updates Herdr only when a reading changes.
-- **A right reading or none.** Each window comes from the agent itself or your
-  config, and a pane it can't match shows nothing rather than a wrong number.
+- **Windows from the agent where it says.** Codex's window comes from its
+  transcript and Claude's from `/context` or your config; otherwise Claude
+  falls back to 200k, or 1M once use passes 200k (see
+  [Context window sizes](#context-window-sizes)). A pane it can't match to a
+  session shows nothing rather than a guess.
 
 ## How it works
 
