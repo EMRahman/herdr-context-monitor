@@ -3,11 +3,39 @@
 [![CI](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Herdr plugin to monitor and report real-time context window usage for active AI agents (Claude Code, OpenAI Codex, Antigravity CLI).
+**A minimal context meter for [Herdr](https://herdr.dev): one Python file, no
+build step, no dependencies.** It shows how full each agent's context window
+is, right under that agent in the sidebar, and turns red above 50%. It supports
+Claude Code, OpenAI Codex and Antigravity CLI.
 
-<img src="docs/sidebar.png" width="188" alt="Herdr agent sidebar showing context usage under each agent, with 52% in bold red">
+| In the terminal (Herdr TUI) | In the browser ([herdr-web-ui](#web-ui-integration-companion-dependency)) |
+| --- | --- |
+| <img src="docs/tui-sidebar.png" height="340" alt="Herdr's agent sidebar in the terminal: each agent has a second row such as ⛁ 34%, and 63% is in bold red"> | <img src="docs/web-ui-sidebar.png" height="340" alt="The web UI's agent list: each agent has a small context badge, the 63% badge is red, and hovering it shows Context 37% left · 126k of 200k tokens"> |
 
-## Features
+## Minimal by design
+
+It does one thing: context use per agent. It has no rate limits, cost
+tracking, dashboards, popups or notifications, and adds nothing to your screen
+beyond the reading itself.
+
+- **In the terminal, one row.** A `⛁ 34%` line under each agent in Herdr's own
+  sidebar, through Herdr's built-in sidebar rows. No pane, bar or popup of its
+  own.
+- **In the browser, one badge.** [herdr-web-ui](#web-ui-integration-companion-dependency)
+  shows the same reading as a small badge next to each agent. Hover it to see
+  what's left and the tokens behind it.
+- **One file, nothing to build.** `monitor.py` is under 400 lines and uses
+  only Python's standard library. It needs `python3` 3.9 or later; on macOS,
+  the one from Xcode's Command Line Tools is enough.
+- **Cheap to run.** Every 5 seconds it reads only what each transcript gained
+  since the last check, and updates Herdr only when a reading changes.
+- **Windows from the agent where it says.** Codex's window comes from its
+  transcript and Claude's from `/context` or your config; otherwise Claude
+  falls back to 200k, or 1M once use passes 200k (see
+  [Context window sizes](#context-window-sizes)). A pane it can't match to a
+  session shows nothing rather than a guess.
+
+## How it works
 
 - **Continuous Context Tracking**: Every 5 seconds, reads what each agent's session transcript gained and computes usage against its context window (see [Context window sizes](#context-window-sizes)).
   - **Antigravity CLI**: 1M token window
@@ -16,7 +44,6 @@ Herdr plugin to monitor and report real-time context window usage for active AI 
 - **Readings only for the right session**: each pane is matched by its Herdr session id. Without one, a reading is guessed only for the single pane of that agent in a folder. When no reading can be made, the pane shows nothing rather than `0%`.
 - **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), the token counts behind them (`ctx_used=<tokens>`, `ctx_window=<tokens>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
 - **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
-- **Web UI Badge**: Displays context pills in the Herdr Web UI sidebar agent roster.
 
 ## Installation
 
@@ -81,7 +108,7 @@ rows = [
 ]
 ```
 
-<img src="docs/sidebar.png" width="188" alt="The resulting sidebar: each agent has a second row with its context usage">
+<img src="docs/tui-sidebar.png" width="239" alt="The resulting sidebar: each agent has a second row with its context usage">
 
 The second row shows an icon and a single percentage, such as `⛁ 3%`. Herdr
 puts a `·` between tokens in a row, so the monitor reports the icon and
@@ -189,8 +216,8 @@ for client-local presentation settings during remote attach.
 
 The monitor emits token metadata to `pane.tokens.ctx_pct` via `herdr pane report-metadata`.
 
-* **Stock Herdr Web UI**: Does not render context percentages in the browser.
-* **[EMRahman/herdr-web-ui](https://github.com/EMRahman/herdr-web-ui)**: Adds first-class visual badge support in the sidebar agent roster and composer ring (merged via [PR #2](https://github.com/EMRahman/herdr-web-ui/pull/2)), alerting in bold red when context usage exceeds 50%.
+* **Stock herdr-web-ui**: Does not show this plugin's readings.
+* **[EMRahman/herdr-web-ui](https://github.com/EMRahman/herdr-web-ui)**: Adds first-class visual badge support in the sidebar agent roster and composer ring (merged via [PR #2](https://github.com/EMRahman/herdr-web-ui/pull/2)), alerting in bold red when context usage exceeds 50%. Hovering a badge shows what's left and the tokens behind it, such as `Context 37% left · 126k of 200k tokens` ([PR #8](https://github.com/EMRahman/herdr-web-ui/pull/8)).
 
 ### Architecture & Relationship
 
