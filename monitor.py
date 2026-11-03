@@ -263,6 +263,7 @@ def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
     if title:
         index_file = codex_dir / "session_index.jsonl"
         if index_file.exists():
+            matching_ids = set()
             with open(index_file, "r", encoding="utf-8") as f:
                 for line in f:
                     try:
@@ -270,10 +271,15 @@ def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
                     except ValueError:
                         continue
                     t_name = d.get("thread_name")
-                    if t_name and d.get("id") not in claimed and (t_name in title or title in t_name):
-                        for candidate in rollouts:
-                            if d["id"] in candidate.name:
-                                return candidate
+                    if t_name and d.get("id") and d["id"] not in claimed and (t_name in title or title in t_name):
+                        matching_ids.add(d["id"])
+            matches = [candidate for candidate in rollouts
+                       if (meta := codex_session_meta(candidate)).get("cwd") == cwd
+                       and meta.get("id") in matching_ids]
+            if len(matches) == 1:
+                return matches[0]
+            if len(matches) > 1:
+                return None
     # each rollout's first line is read once, so searching all of them stays cheap
     for candidate in rollouts:
         meta = codex_session_meta(candidate)

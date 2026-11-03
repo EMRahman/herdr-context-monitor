@@ -211,6 +211,33 @@ class CodexTests(MonitorTest):
         state = self.read(path)
         self.assertEqual((state["model"], state["window"]), ("gpt-b", None))
 
+    def test_title_match_cannot_select_a_session_in_another_folder(self):
+        self.write(".codex/session_index.jsonl", [{"id": "old", "thread_name": "DeuceMate"}])
+        self.write(".codex/sessions/rollout-old.jsonl", [
+            {"type": "session_meta", "payload": {"id": "old", "cwd": "/Code/DeuceMate"}},
+            token_count(53_000, 100_000),
+        ])
+        new = self.write(".codex/sessions/rollout-new.jsonl", [
+            {"type": "session_meta", "payload": {"id": "new", "cwd": "/Code/DeuceMate3/DeuceMate"}},
+            token_count(10_000, 100_000),
+        ])
+        self.assertEqual(self.m.find_codex_transcript(None, "/Code/DeuceMate3/DeuceMate", "DeuceMate3", True, set()), new)
+        self.assertEqual(self.m.get_codex_context(None, "/Code/DeuceMate3/DeuceMate", "DeuceMate3", True, set(), {})["pct"], 10)
+        self.assertIsNone(self.m.find_codex_transcript(None, "/Code/DeuceMate4", "DeuceMate3", True, set()))
+
+    def test_ambiguous_title_matches_in_same_folder_are_not_guessed(self):
+        self.write(".codex/session_index.jsonl", [
+            {"id": "one", "thread_name": "DeuceMate"},
+            {"id": "two", "thread_name": "DeuceMate"},
+        ])
+        for session_id in ("one", "two"):
+            self.write(f".codex/sessions/rollout-{session_id}.jsonl", [
+                {"type": "session_meta", "payload": {"id": session_id, "cwd": "/work"}},
+            ])
+        self.assertIsNone(self.m.find_codex_transcript(None, "/work", "DeuceMate", True, set()))
+        self.assertEqual(self.m.find_codex_transcript(None, "/work", "DeuceMate", True, {"one"}).name,
+                         "rollout-two.jsonl")
+
     def test_folder_guess_searches_every_rollout_and_caches_their_first_lines(self):
         sessions = self.home / ".codex/sessions/2026/10/13"
 
