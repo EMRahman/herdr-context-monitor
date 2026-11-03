@@ -16,7 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         # 3.9 is the python3 macOS ships, which Herdr runs the plugin with
-        os: [ubuntu-latest, macos-latest]
+        # Ubuntu 26.04 does not provide a Python 3.9 build for setup-python.
+        os: [ubuntu-22.04, macos-latest]
         python: ["3.9", "3.13"]
     steps:
       - uses: actions/checkout@v4
