@@ -344,5 +344,15 @@ class UpdateAllPanesTests(MonitorTest):
         self.assertEqual(self.sent, [])
 
 
+class LifecycleTests(MonitorTest):
+    def test_continuous_monitor_does_not_exit_when_its_parent_changes(self):
+        self.m.sys.argv = ["monitor.py"]
+        with mock.patch.object(self.m, "update_all_panes", side_effect=KeyboardInterrupt) as update:
+            with mock.patch.object(self.m.os, "getppid", side_effect=[100, 101]):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.m.main()
+        update.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
