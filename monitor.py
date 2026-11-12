@@ -372,18 +372,16 @@ def update_all_panes():
 
 def main():
     once = "--once" in sys.argv
-    # The startup hook runs as a child of the Herdr server. When the server
-    # exits we are reparented, so stop rather than outlive it as a stale copy.
-    parent_pid = os.getppid()
     while True:
-        if not once and os.getppid() != parent_pid:
-            break
         try:
             update_all_panes()
         except Exception:
             pass
         if once:
             break
+        # Herdr owns the startup command and terminates it when the plugin or
+        # server stops. Do not infer that lifecycle from a parent PID: plugin
+        # launchers may be replaced while Herdr (and its panes) keep running.
         time.sleep(5)
 
 if __name__ == "__main__":
