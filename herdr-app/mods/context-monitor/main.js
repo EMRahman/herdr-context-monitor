@@ -1,5 +1,5 @@
 // Context Monitor: how full each agent's context window is, one line per agent.
-// The readings come from monitor.py beside this file (`--app`), which reads the
+// The readings come from monitor.py beside this file, which reads the
 // transcripts of Claude Code and Codex on this computer.
 
 import { View, div, image, svg } from "gpui-kit";
@@ -95,6 +95,7 @@ export default class ContextMonitor extends View {
       const dir = `${appHome()}/mods/${NAME}`;
       let r = null;
       try {
+        // Keep the existing arguments so this works while an older monitor.py is being updated.
         r = await exec("python3", [`${dir}/monitor.py`, "--app", "--config-dir", dir], { timeout: 20000 });
       } catch (e) {
         const why = String(e?.message ?? e);

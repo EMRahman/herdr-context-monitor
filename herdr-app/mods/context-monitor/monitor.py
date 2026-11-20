@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import os
 import re
 import shutil
-import sys
 import subprocess
-import time
 from collections import Counter
 from pathlib import Path
 
-# Resolve herdr binary
-HERDR_BIN = os.environ.get("HERDR_BIN_PATH")
-if not HERDR_BIN or not os.path.exists(HERDR_BIN):
-    default_bin = os.path.expanduser("~/.local/bin/herdr")
-    HERDR_BIN = default_bin if os.path.exists(default_bin) else "herdr"
-
-CONFIG_DIR = Path(os.environ.get("HERDR_PLUGIN_CONFIG_DIR")
-                  or Path.home() / ".config/herdr/plugins/config/context-monitor")
-# Where config.json is looked for, in order: --app mode puts the mod's own folder first.
-CONFIG_DIRS = [CONFIG_DIR]
-
 # The Herdr desktop app's terminals live in herdr-core, which `hc` drives.
 HC_BIN = shutil.which("hc") or os.path.expanduser("~/.local/bin/hc")
-# Where --app mode keeps how far each transcript has been read, between its one-shot runs.
+# How far each transcript has been read is cached between polls.
 APP_STATE = Path.home() / ".cache/herdr-context-monitor/app-state.json"
 # herdr-core's name for each agent (`hc ls`), as this monitor names it.
 APP_AGENTS = {"claude-code": "claude", "claude": "claude", "codex": "codex"}
@@ -30,11 +18,8 @@ APP_AGENTS = {"claude-code": "claude", "claude": "claude", "codex": "codex"}
 ROLLOUT = re.compile(r"/rollout-[^/]*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$")
 
 # Context window sizes (tokens) used when a transcript does not state its own.
-AGY_WINDOW = 1_000_000            # Gemini Pro / Flash 1M window
 CLAUDE_STANDARD_WINDOW = 200_000
 CLAUDE_LONG_WINDOW = 1_000_000    # a request past 200k can only have run in the 1M window
-
-CTX_TOKENS = ["ctx_pct", "ctx_unit", "ctx_display", "ctx_display_high", "ctx_label", "ctx_label_high"]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # The summary line Claude Code's /context prints, e.g. "107.9k/1m tokens (11%)"
@@ -48,17 +33,12 @@ _touched = set()
 _paths = {}
 # Codex rollout path -> its session_meta, which never changes once written.
 _codex_meta = {}
-# Pane id -> the percentage last reported (None once cleared), so unchanged readings are not resent.
-_reported = {}
 
 
-def load_context_windows():
-    """Reads {"context_windows": {"<model id prefix>": <tokens>}} from the first config.json found."""
+def load_context_windows(config_dir):
+    """Reads {"context_windows": {"<model id prefix>": <tokens>}} from the mod's config.json."""
     try:
-        config = next((d / "config.json" for d in CONFIG_DIRS if (d / "config.json").exists()), None)
-        if config is None:
-            return {}
-        with open(config, "r", encoding="utf-8") as f:
+        with open(config_dir / "config.json", "r", encoding="utf-8") as f:
             windows = json.load(f).get("context_windows", {})
         return {str(k): int(v) for k, v in windows.items() if int(v) > 0}
     except Exception:
@@ -116,32 +96,6 @@ def read_new_entries(path, parse, initial):
             if isinstance(entry, dict):
                 parse(tail["state"], entry)
     return tail["state"]
-
-
-def get_open_panes():
-    try:
-        res = subprocess.run([HERDR_BIN, "pane", "list"], capture_output=True, text=True, check=True)
-        data = json.loads(res.stdout)
-        return data.get("result", {}).get("panes", [])
-    except Exception:
-        return []
-
-
-def parse_agy(state, entry):
-    tokens = (entry.get("input_tokens") or 0) + (entry.get("cache_read_tokens") or 0)
-    if tokens:
-        state["tokens"] = tokens
-
-
-def get_agy_context(session_id):
-    """Inspects Antigravity CLI's transcript logs."""
-    if not session_id:
-        return None
-    log_path = Path.home() / f".gemini/antigravity-cli/brain/{session_id}/.system_generated/logs/transcript.jsonl"
-    if not log_path.exists():
-        return None
-    state = read_new_entries(log_path, parse_agy, lambda: {"tokens": None})
-    return reading(state["tokens"], AGY_WINDOW)
 
 
 def entry_text(entry):
@@ -313,75 +267,6 @@ def get_codex_context(session_id, cwd, title, may_guess, claimed, windows):
     return reading(state["tokens"], state["window"] or configured_window(windows, state["model"]))
 
 
-def report_metadata(pane_id, current):
-    """Reports a reading to the pane's tokens; returns whether Herdr accepted it."""
-    if current is None:
-        # unknown: clear the tokens so the sidebar shows nothing rather than a false 0%
-        args = [arg for token in CTX_TOKENS for arg in ("--clear-token", token)]
-    else:
-        pct = current["pct"]
-        suffix = "_high" if pct > 50 else ""
-        inactive_suffix = "" if pct > 50 else "_high"
-        args = [
-            "--token", f"ctx_pct={pct}",
-            "--token", "ctx_unit=%",
-            "--token", f"ctx_display{suffix}={pct}%",
-            "--clear-token", f"ctx_display{inactive_suffix}",
-            # Herdr separates tokens in a row with a dot, so the icon shares a value.
-            "--token", f"ctx_label{suffix}=⛁ {pct}%",
-            "--clear-token", f"ctx_label{inactive_suffix}",
-        ]
-    try:
-        res = subprocess.run([HERDR_BIN, "pane", "report-metadata", str(pane_id), "--source", "context-monitor", *args],
-                             capture_output=True)
-    except OSError:
-        return False
-    return res.returncode == 0
-
-
-def update_all_panes():
-    panes = get_open_panes()
-    windows = load_context_windows()
-    sessions = [(pane.get("agent_session") or {}).get("value") for pane in panes]
-    claimed = {session_id for session_id in sessions if session_id}
-    per_folder = Counter((pane.get("agent"), pane.get("cwd", "")) for pane in panes)
-    open_ids = set()
-
-    for pane, session_id in zip(panes, sessions):
-        pane_id = pane.get("pane_id")
-        agent = pane.get("agent")
-        cwd = pane.get("cwd", "")
-        title = pane.get("terminal_title") or pane.get("title") or ""
-
-        if not pane_id or agent not in ("agy", "claude", "codex"):
-            continue
-        open_ids.add(pane_id)
-        may_guess = per_folder[(agent, cwd)] == 1
-
-        current = None
-        try:
-            if agent == "agy":
-                current = get_agy_context(session_id)
-            elif agent == "claude":
-                current = get_claude_context(session_id, cwd, may_guess, claimed, windows)
-            elif agent == "codex":
-                current = get_codex_context(session_id, cwd, title, may_guess, claimed, windows)
-        except Exception:
-            current = None
-
-        # resent only when the percentage the sidebar shows changes
-        shown = None if current is None else current["pct"]
-        # a failed report is not remembered, so the next poll retries it
-        if (pane_id not in _reported or _reported[pane_id] != shown) and report_metadata(pane_id, current):
-            _reported[pane_id] = shown
-
-    for pane_id in set(_reported) - open_ids:
-        del _reported[pane_id]
-    for path in set(_tails) - _touched:
-        del _tails[path]
-    _touched.clear()
-
-
 def run_json(args):
     try:
         res = subprocess.run(args, capture_output=True, text=True, timeout=10)
@@ -429,10 +314,9 @@ def codex_session_id(pid):
     return ids.pop() if len(ids) == 1 else None
 
 
-def app_readings():
+def app_readings(windows):
     """Readings for the Herdr app's agent terminals, by terminal address; unknown ones are left out."""
     terminals = get_app_terminals()
-    windows = load_context_windows()
     for t in terminals:
         find_session = claude_session_id if t["agent"] == "claude" else codex_session_id
         t["session"] = find_session(t["pid"]) if t["pid"] else None
@@ -457,7 +341,7 @@ def app_readings():
 
 
 def load_app_state(path):
-    """Picks up where the last --app run stopped reading, so each run reads only what transcripts gained."""
+    """Picks up where the last poll stopped reading, so each poll reads only what transcripts gained."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -489,39 +373,19 @@ def save_app_state(path):
         pass
 
 
-def option(args, name):
-    """The value after --name in args, if given."""
-    return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
-
-
-def run_app(args):
+def main(argv=None):
     """For the Herdr app's mod: one reading of every agent terminal, printed as JSON."""
-    if option(args, "--config-dir"):
-        # the mod's own config.json, else the TUI plugin's, so one setting serves both
-        CONFIG_DIRS.insert(0, Path(option(args, "--config-dir")))
-    state = Path(option(args, "--state") or APP_STATE)
-    load_app_state(state)
-    readings = app_readings()
-    save_app_state(state)
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    # Keep the existing desktop mod invocation working during an update.
+    parser.add_argument("--app", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--config-dir", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument("--state", type=Path, default=APP_STATE)
+    args = parser.parse_args(argv)
+    load_app_state(args.state)
+    readings = app_readings(load_context_windows(args.config_dir))
+    save_app_state(args.state)
     print(json.dumps({"readings": readings}))
 
-
-def main():
-    if "--app" in sys.argv:
-        run_app(sys.argv[1:])
-        return
-    once = "--once" in sys.argv
-    while True:
-        try:
-            update_all_panes()
-        except Exception:
-            pass
-        if once:
-            break
-        # Herdr owns the startup command and terminates it when the plugin or
-        # server stops. Do not infer that lifecycle from a parent PID: plugin
-        # launchers may be replaced while Herdr (and its panes) keep running.
-        time.sleep(5)
 
 if __name__ == "__main__":
     main()

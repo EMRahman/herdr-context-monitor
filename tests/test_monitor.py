@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-MONITOR = Path(__file__).resolve().parent.parent / "monitor.py"
+MONITOR = Path(__file__).resolve().parent.parent / "herdr-app/mods/context-monitor/monitor.py"
 
 
 def assistant(tokens, model="claude-sonnet-5", sidechain=False):
@@ -50,8 +50,8 @@ class MonitorTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.home = Path(tmp.name)
-        self.config_dir = self.home / "plugin-config"
-        env = mock.patch.dict(os.environ, {"HOME": str(self.home), "HERDR_PLUGIN_CONFIG_DIR": str(self.config_dir)})
+        self.config_dir = self.home / "mod-config"
+        env = mock.patch.dict(os.environ, {"HOME": str(self.home)})
         env.start()
         self.addCleanup(env.stop)
         spec = importlib.util.spec_from_file_location("monitor", MONITOR)
@@ -88,12 +88,12 @@ class HelperTests(MonitorTest):
         self.assertIsNone(self.m.configured_window(windows, None))
 
     def test_load_context_windows(self):
-        self.assertEqual(self.m.load_context_windows(), {})
+        self.assertEqual(self.m.load_context_windows(self.config_dir), {})
         self.config_dir.mkdir()
         (self.config_dir / "config.json").write_text(json.dumps({"context_windows": {"claude-opus-5-5": 1_000_000, "bad": 0}}))
-        self.assertEqual(self.m.load_context_windows(), {"claude-opus-5-5": 1_000_000})
+        self.assertEqual(self.m.load_context_windows(self.config_dir), {"claude-opus-5-5": 1_000_000})
         (self.config_dir / "config.json").write_text("not json")
-        self.assertEqual(self.m.load_context_windows(), {})
+        self.assertEqual(self.m.load_context_windows(self.config_dir), {})
 
     def test_claude_project_dir_replaces_every_non_alphanumeric(self):
         self.assertEqual(self.m.claude_project_dir("/Users/a.b/c_d e").name, "-Users-a-b-c-d-e")
@@ -262,96 +262,8 @@ class CodexTests(MonitorTest):
             self.assertEqual(opened, [])
 
 
-class AntigravityTests(MonitorTest):
-    def test_reading_against_a_1m_window(self):
-        self.write(".gemini/antigravity-cli/brain/g1/.system_generated/logs/transcript.jsonl",
-                   [{"input_tokens": 100_000, "cache_read_tokens": 50_000}])
-        self.assertEqual(self.m.get_agy_context("g1"), {"pct": 15, "used": 150_000, "window": 1_000_000})
-        self.assertIsNone(self.m.get_agy_context("missing"))
-        self.assertIsNone(self.m.get_agy_context(None))
-
-
-class ReportingTests(MonitorTest):
-    def report_args(self, current):
-        with mock.patch.object(self.m.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
-            self.assertTrue(self.m.report_metadata("w1:p1", current))
-        return run.call_args[0][0]
-
-    def test_low_use_reports_plain_tokens_and_clears_the_high_ones(self):
-        args = self.report_args({"pct": 25, "used": 50_000, "window": 200_000})
-        for expected in ("ctx_pct=25", "ctx_label=⛁ 25%", "ctx_display=25%"):
-            self.assertIn(expected, args)
-        # the token counts were only for herdr-web-ui's tooltip
-        self.assertFalse([a for a in args if a.startswith(("ctx_used", "ctx_window"))])
-        self.assertEqual(args[args.index("ctx_label_high") - 1], "--clear-token")
-
-    def test_use_above_50_reports_the_high_tokens(self):
-        args = self.report_args({"pct": 51, "used": 102_000, "window": 200_000})
-        self.assertIn("ctx_label_high=⛁ 51%", args)
-        self.assertEqual(args[args.index("ctx_label") - 1], "--clear-token")
-
-    def test_unknown_clears_every_token(self):
-        args = self.report_args(None)
-        self.assertEqual(args.count("--clear-token"), len(self.m.CTX_TOKENS))
-        self.assertNotIn("--token", args)
-
-    def test_a_rejected_report_returns_false(self):
-        with mock.patch.object(self.m.subprocess, "run", return_value=mock.Mock(returncode=1)):
-            self.assertFalse(self.m.report_metadata("w1:p1", None))
-        with mock.patch.object(self.m.subprocess, "run", side_effect=OSError):
-            self.assertFalse(self.m.report_metadata("w1:p1", None))
-
-
-class UpdateAllPanesTests(MonitorTest):
-    def setUp(self):
-        super().setUp()
-        self.transcript = self.write(".claude/projects/-work/s1.jsonl", [assistant(50_000)])
-        self.panes = [{"pane_id": "w1:p1", "agent": "claude", "agent_session": {"value": "s1"}, "cwd": "/work"}]
-        self.m.get_open_panes = lambda: self.panes
-        self.sent = []
-        self.accept = True
-        self.m.report_metadata = lambda pane, current: self.sent.append((pane, current and current["pct"])) or self.accept
-
-    def test_unchanged_readings_are_not_resent(self):
-        self.m.update_all_panes()
-        self.m.update_all_panes()
-        self.assertEqual(self.sent, [("w1:p1", 25)])
-        # more tokens that leave the percentage where it was are not resent
-        self.append(self.transcript, [assistant(50_900)])
-        self.m.update_all_panes()
-        self.assertEqual(self.sent, [("w1:p1", 25)])
-        self.append(self.transcript, [assistant(100_000)])
-        self.m.update_all_panes()
-        self.assertEqual(self.sent, [("w1:p1", 25), ("w1:p1", 50)])
-
-    def test_a_rejected_report_is_retried(self):
-        self.accept = False
-        self.m.update_all_panes()
-        self.accept = True
-        self.m.update_all_panes()
-        self.m.update_all_panes()
-        self.assertEqual(self.sent, [("w1:p1", 25), ("w1:p1", 25)])
-        self.assertEqual(self.m._reported, {"w1:p1": 25})
-
-    def test_closed_panes_and_their_transcripts_are_forgotten(self):
-        self.m.update_all_panes()
-        self.panes.clear()
-        self.m.update_all_panes()
-        self.assertEqual((self.m._reported, self.m._tails), ({}, {}))
-
-    def test_two_panes_in_one_folder_without_session_ids_get_no_guess(self):
-        self.panes[:] = [{"pane_id": f"w1:p{i}", "agent": "claude", "cwd": "/work"} for i in (1, 2)]
-        self.m.update_all_panes()
-        self.assertEqual(self.sent, [("w1:p1", None), ("w1:p2", None)])
-
-    def test_other_agents_are_skipped(self):
-        self.panes[:] = [{"pane_id": "w1:p9", "agent": "shell", "cwd": "/work"}]
-        self.m.update_all_panes()
-        self.assertEqual(self.sent, [])
-
-
-class AppModeTests(MonitorTest):
-    """--app mode: one-shot readings for the Herdr desktop app's mod, by herdr-core terminal address."""
+class DesktopMonitorTests(MonitorTest):
+    """One-shot readings for the desktop mod, by herdr-core terminal address."""
 
     def setUp(self):
         super().setUp()
@@ -361,10 +273,10 @@ class AppModeTests(MonitorTest):
         self.m.get_app_terminals = lambda: [dict(t) for t in self.terminals]
         self.state = self.home / "state.json"
 
-    def run_app(self, module=None):
+    def poll(self, module=None, args=()):
         module = module or self.m
         with mock.patch("builtins.print") as printed:
-            module.run_app(["--state", str(self.state)])
+            module.main(["--state", str(self.state), *args])
         return json.loads(printed.call_args[0][0])["readings"]
 
     def fresh_module(self):
@@ -408,56 +320,37 @@ class AppModeTests(MonitorTest):
 
     def test_readings_are_keyed_by_terminal_and_unknown_ones_left_out(self):
         self.terminals.append({"address": "t2", "agent": "claude", "pid": 102, "cwd": "/work", "title": ""})
-        self.assertEqual(self.run_app(), {"t1": {"pct": 25, "used": 50_000, "window": 200_000}})
+        self.assertEqual(self.poll(), {"t1": {"pct": 25, "used": 50_000, "window": 200_000}})
 
     def test_a_later_run_reads_only_what_the_transcript_gained(self):
-        self.run_app()
+        self.poll()
         with open(self.transcript, "a") as f:
             f.write(json.dumps(assistant(100_000)) + "\n" + '{"type": "assist')
         later = self.fresh_module()
-        self.assertEqual(self.run_app(later)["t1"]["pct"], 50)
+        self.assertEqual(self.poll(later)["t1"]["pct"], 50)
         self.assertEqual(later._tails[self.transcript]["offset"], self.transcript.stat().st_size)
         # the unfinished line is kept from one run to the next and completed by what follows
         with open(self.transcript, "a") as f:
             f.write('ant", "message": {"usage": {"input_tokens": 150000}}}\n')
-        self.assertEqual(self.run_app(self.fresh_module())["t1"]["pct"], 75)
+        self.assertEqual(self.poll(self.fresh_module())["t1"]["pct"], 75)
 
     def test_an_unreadable_state_file_starts_over(self):
         self.state.write_text("{not json")
-        self.assertEqual(self.run_app()["t1"]["pct"], 25)
+        self.assertEqual(self.poll()["t1"]["pct"], 25)
         self.assertIn(str(self.transcript), json.loads(self.state.read_text())["tails"])
 
-    def test_the_mods_config_comes_first_then_the_plugins(self):
-        mod_dir = self.home / "mod"
-        mod_dir.mkdir()
+    def test_main_uses_the_config_next_to_the_monitor(self):
+        self.config_dir.mkdir()
+        (self.config_dir / "config.json").write_text(json.dumps({"context_windows": {"claude-sonnet": 500_000}}))
+        with mock.patch.object(self.m, "__file__", str(self.config_dir / "monitor.py")):
+            readings = self.poll()
+        self.assertEqual(readings["t1"], {"pct": 10, "used": 50_000, "window": 500_000})
+
+    def test_the_installed_mods_poll_command_still_works(self):
         self.config_dir.mkdir()
         (self.config_dir / "config.json").write_text(json.dumps({"context_windows": {"claude-sonnet": 1_000_000}}))
-        with mock.patch("builtins.print") as printed:
-            self.m.run_app(["--state", str(self.state), "--config-dir", str(mod_dir)])
-        self.assertEqual(json.loads(printed.call_args[0][0])["readings"]["t1"]["window"], 1_000_000)
-        (mod_dir / "config.json").write_text(json.dumps({"context_windows": {"claude-sonnet": 500_000}}))
-        self.assertEqual(self.m.load_context_windows(), {"claude-sonnet": 500_000})
-
-    def test_main_runs_once_in_app_mode(self):
-        self.m.sys.argv = ["monitor.py", "--app", "--state", str(self.state)]
-        with mock.patch("builtins.print"), mock.patch.object(self.m.time, "sleep") as slept:
-            self.m.main()
-        slept.assert_not_called()
-
-    def test_the_mod_ships_the_same_monitor(self):
-        copy = MONITOR.parent / "herdr-app/mods/context-monitor/monitor.py"
-        self.assertEqual(copy.read_bytes(), MONITOR.read_bytes(),
-                         "herdr-app/mods/context-monitor/monitor.py must be a copy of monitor.py")
-
-
-class LifecycleTests(MonitorTest):
-    def test_continuous_monitor_does_not_exit_when_its_parent_changes(self):
-        self.m.sys.argv = ["monitor.py"]
-        with mock.patch.object(self.m, "update_all_panes", side_effect=KeyboardInterrupt) as update:
-            with mock.patch.object(self.m.os, "getppid", side_effect=[100, 101]):
-                with self.assertRaises(KeyboardInterrupt):
-                    self.m.main()
-        update.assert_called_once()
+        readings = self.poll(args=("--app", "--config-dir", str(self.config_dir)))
+        self.assertEqual(readings["t1"], {"pct": 5, "used": 50_000, "window": 1_000_000})
 
 
 if __name__ == "__main__":
