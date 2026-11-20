@@ -323,6 +323,46 @@ class JoinTests(DockTest):
         self.assertNotIn("context-monitor", self.mods(kept))
         self.assertEqual(kept["children"][0]["children"][-1]["id"], "usage-monitor")
 
+    def share_main_context(self):
+        self.status["layout"] = "main"
+        self.run_main()
+        shared = self.layout("main-context")
+        shared["children"][0]["children"].append(self.USAGE)
+        self.write_layout("main-context", shared)
+
+    def test_coming_back_to_a_shared_main_context_needs_no_force(self):
+        self.share_main_context()
+        self.run_main("--layout", "herdr-with-usage")
+        self.assertEqual(self.run_main("--layout", "main-context"), 0)
+        back = self.layout("main-context")
+        self.assertIn("context-monitor", self.mods(back))
+        self.assertEqual(back["children"][0]["children"][-1]["id"], "usage-monitor")
+        self.assertNotIn("context-monitor", self.mods(self.layout("herdr-with-usage")))
+
+    def test_coming_back_after_herdr_changed_main_rebuilds_it(self):
+        self.share_main_context()
+        self.run_main("--layout", "herdr-with-usage")
+        self.set_main({**MAIN, "titlebar": "system"})
+        self.assertEqual(self.run_main("--layout", "main-context"), 0)
+        back = self.layout("main-context")
+        self.assertEqual(back["titlebar"], "system")
+        self.assertEqual(back["children"][0]["children"][-1]["id"], "usage-monitor")
+
+    def test_docking_again_after_undocking_from_a_shared_main_context(self):
+        self.share_main_context()
+        self.run_main("--undock")
+        self.assertNotIn("context-monitor", self.mods(self.layout("main-context")))
+        self.assertTrue(self.d.BUILT.exists(), "kept while main-context is")
+        self.assertEqual(self.run_main(), 0)
+        self.assertIn("context-monitor", self.mods(self.layout("main-context")))
+
+    def test_an_unshared_main_context_goes_with_its_record(self):
+        self.status["layout"] = "main"
+        self.run_main()
+        self.run_main("--undock")
+        self.assertIsNone(self.layout("main-context"))
+        self.assertFalse(self.d.BUILT.exists())
+
     def test_undock_from_a_joined_layout_takes_out_only_the_block(self):
         self.run_main()
         self.run_main("--undock")

@@ -41,8 +41,12 @@ MOD = "context-monitor"
 SOURCE = Path(__file__).resolve().parent / "mods" / MOD
 APP_HOME = Path(os.environ.get("HERDR_APP_HOME") or Path.home() / ".config/herdr-app")
 LAYOUT = "main-context"
-# Hidden, so writing it doesn't reload the mod; the mod reads it to tell when main has changed.
+# Where the panel is docked. Hidden, so writing it doesn't reload the mod; the mod reads it to
+# tell when main has changed.
 RECORD = APP_HOME / "mods" / MOD / ".dock.json"
+# How main-context was last built: kept for as long as main-context is, wherever the panel is, so
+# the layout can be told apart from hand edits after the panel leaves it and comes back.
+BUILT = APP_HOME / "mods" / MOD / ".dock-main-context.json"
 # What the layout's root says about its shape; every other root key is look (theme, fonts, ...).
 STRUCTURE = ("id", "type", "children", "cloned_from")
 # The mod: what installing copies (not herdr-app check's type files, not the record).
@@ -98,10 +102,29 @@ def load_record():
 
 
 def built_record():
-    """The record of main-context as this helper last wrote it."""
+    """How this helper last built main-context: {main, written}."""
+    try:
+        built = json.loads(BUILT.read_text(encoding="utf-8"))
+        if isinstance(built, dict) and isinstance(built.get("written"), dict):
+            return built
+    except (OSError, ValueError):
+        pass
+    # docked before main-context's record had a file of its own
     record = load_record()
     ok = record and record["layout"] == LAYOUT and isinstance(record.get("written"), dict)
     return record if ok else None
+
+
+def save_built(built):
+    BUILT.parent.mkdir(parents=True, exist_ok=True)
+    BUILT.write_text(json.dumps(built, indent=2) + "\n", encoding="utf-8")
+
+
+def drop_built():
+    try:
+        BUILT.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def save_record(record):
@@ -257,23 +280,23 @@ def looks(doc):
     return {k: v for k, v in doc.items() if k not in STRUCTURE}
 
 
-def state(record=None):
-    """What's docked now: whether the layout is ours, untouched, and built from the current main.
-    `record`: judge main-context against this record instead of the current one."""
+def state():
+    """What's docked now: whether the layout is ours, untouched, and built from the current main."""
     main_text = read(layout_path("main"))
     if main_text is None:
         raise DockError(f"No Herdr main layout at {layout_path('main')}: is the Herdr app installed?")
     text = read(layout_path(LAYOUT))
-    record = record if record is not None else built_record()
+    record = built_record()
     current = None
     if text is not None:
         try:
             current = json.loads(text)
         except ValueError:
             current = None
-    # other mods' blocks are theirs to add: they aren't hand edits
+    # other mods' blocks are theirs to add, and ours comes and goes with the panel: neither is a
+    # hand edit
     foreign = foreign_to_us()
-    mine = lambda doc: shape(strip(doc, foreign)[0])
+    mine = lambda doc: shape(strip(doc, lambda node: foreign(node) or is_ours(node))[0])
     if current is None:
         modified = text is not None
     elif record:
@@ -346,13 +369,13 @@ def dock(force=False, show=True):
     changed = json.dumps(doc, indent=2) + "\n" != previous_text
     if changed:
         write_layout(doc, previous_text)
+    save_built({"main": digest(s["main_text"]), "written": doc})
     save_record({
         "layout": LAYOUT,
-        "main": digest(s["main_text"]),
+        "mode": "built",
         # the mod compares this with layouts/main.json to tell when Herdr shipped a new main
         "main_text": s["main_text"],
         "helper": str(Path(__file__).resolve()),
-        "written": doc,
     })
     if show:
         show_layout(LAYOUT)
@@ -430,8 +453,9 @@ def leave(record):
     if name != LAYOUT or record.get("mode") == "joined":
         remove_ours(name)
         return
-    s = state(record if isinstance(record.get("written"), dict) else None)
+    s = state()
     if not s["docked"]:
+        drop_built()
         return
     others = s["current"] is not None and strip(s["current"], foreign_to_us())[1]
     if s["modified"] or others:
@@ -441,6 +465,7 @@ def leave(record):
     if on_screen() == LAYOUT:
         app("do", "layout.switch", json.dumps({"name": "main"}))
     layout_path(LAYOUT).unlink()
+    drop_built()
 
 
 def undock():
