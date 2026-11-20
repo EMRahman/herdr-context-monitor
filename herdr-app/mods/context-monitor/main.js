@@ -123,6 +123,12 @@ export default class ContextMonitor extends View {
     });
   }
 
+  // Python may be there now: poll again.
+  retry(cx) {
+    this.halted = false;
+    this.poll(cx);
+  }
+
   row(t, a, r, narrow) {
     const high = r.pct > HIGH;
     const value = div()
@@ -217,13 +223,28 @@ export default class ContextMonitor extends View {
             .pb(overlay ? 4 : 0)
             .text_size(12)
             .text_color(this.error ? t.ansi1 : t.dim)
-            .when(this.halted, (el) =>
-              el.cursor_pointer().on_click((_e, cx) => {
-                this.halted = false;
-                this.poll(cx);
-              }),
-            )
+            .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
             .child(note),
+        ),
+      )
+      // The rail has no room for the note: a red mark that says it on hover (and retries, when
+      // polling stopped for want of Python).
+      .when(narrow && Boolean(this.error), (el) =>
+        el.child(
+          h_flex()
+            .id("ctx-note-mark")
+            .h(28)
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .rounded(8)
+            .text_size(12)
+            .font_bold()
+            .text_color(t.ansi1)
+            .hover((s) => s.bg(t.hover))
+            .tooltip(this.error)
+            .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
+            .child("!"),
         ),
       )
       .when(Boolean(overlay), (el) => el.child(v_flex().px(8).children(rows)))

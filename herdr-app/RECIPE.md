@@ -34,7 +34,10 @@ window.
   install the developer tools, the line reads "Python 3 is needed to read context
   use. On macOS, install it with: xcode-select --install. Click here to try
   again." in `ansi1`. Polling stops until it's clicked, so macOS's install prompt
-  doesn't come back every 5 seconds.
+  doesn't come back every 5 seconds. In the sidebar's rail, where there's no room for
+  the line, a bold `!` in `ansi1` takes its place, 28px tall and centered: the
+  same text as a tooltip, `hover` behind it, and clicking it tries again. Any
+  other error shows the same way.
 - An agent with no reading has no line: never a guessed or `0%` value.
 
 ## How it behaves
