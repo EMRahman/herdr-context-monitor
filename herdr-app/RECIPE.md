@@ -28,8 +28,16 @@ window.
     leading status glyph or spinner and Codex's `[ ! ] ` / `[ . ] ` mark;
   - on the right, `⛁ 34%` at 12px in `dim`; above 50%, in `ansi1` and bold.
 - **No readings yet**: one line at 12px in `dim`, "Claude Code and Codex agents
-  on this computer show here after their first answer." If `python3` can't run or
-  `monitor.py` fails, its last error line in `ansi1` takes its place.
+  on this computer show here after their first answer." If `monitor.py` fails,
+  its last error line in `ansi1` takes its place.
+- **No Python**: when `python3` can't start, or is macOS's stand-in that asks to
+  install the developer tools, the line reads "Python 3 is needed to read context
+  use. On macOS, install it with: xcode-select --install. Click here to try
+  again." in `ansi1`. Polling stops until it's clicked, so macOS's install prompt
+  doesn't come back every 5 seconds. In the sidebar's rail, where there's no room for
+  the line, a bold `!` in `ansi1` takes its place, 28px tall and centered: the
+  same text as a tooltip, `hover` behind it, and clicking it tries again. Any
+  other error shows the same way.
 - An agent with no reading has no line: never a guessed or `0%` value.
 
 ## How it behaves
@@ -138,6 +146,11 @@ window.
   `{ "context_windows": { "claude-opus-5-5": 1000000 } }`.
 - Don't animate or redraw on a timer: the poll only calls `cx.notify()` when
   something shown changed.
+- On a Mac without the developer tools, `/usr/bin/python3` is a stand-in: it
+  exits 1 with `xcode-select: note: No developer tools were found, requesting
+  install.` on stderr and shows the system's install prompt. A missing program
+  makes `exec` reject with "cannot run …"; a timeout ("took longer than …") is
+  only retried.
 - `"place"` docking needs the app to see the folder at start, and the shipped
   layouts can't take new blocks: put the block in the person's own layout, or
   use the kept window, which works in every layout without a restart.

@@ -21,6 +21,12 @@ const count = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : `${Math.round(n /
 
 const local = (a) => !a.address.includes("/");
 
+const NO_PYTHON = "Python 3 is needed to read context use. On macOS, install it with: xcode-select --install. Click here to try again.";
+
+// No usable python3: it isn't there ("cannot run python3"), or it is macOS's stand-in, which asks
+// to install the developer tools every time it runs and exits.
+const noPython = (r) => r.code !== 0 && /xcode-select|developer tools/i.test(r.stderr);
+
 // A short fingerprint of a text, to say "already told you about this one".
 const fingerprint = (s) => {
   let h = 5381;
@@ -71,7 +77,9 @@ export default class ContextMonitor extends View {
   }
 
   poll(cx) {
-    if (this.busy) return;
+    // Without Python, asking again every 5 seconds would bring macOS's install prompt back each
+    // time: wait until the person clicks to try again.
+    if (this.busy || this.halted) return;
     // monitor.py reads this computer's transcripts: agents on other machines get no reading.
     if (!agents().some(local)) {
       if (Object.keys(this.readings).length) {
@@ -84,13 +92,27 @@ export default class ContextMonitor extends View {
     cx.spawn(async (cx) => {
       let readings = {};
       let error = null;
+      const dir = `${appHome()}/mods/${NAME}`;
+      let r = null;
       try {
-        const dir = `${appHome()}/mods/${NAME}`;
-        const r = await exec("python3", [`${dir}/monitor.py`, "--app", "--config-dir", dir], { timeout: 20000 });
-        if (r.code === 0) readings = JSON.parse(r.stdout).readings ?? {};
-        else error = r.stderr.trim().split("\n").pop() || `monitor.py exited with ${r.code}`;
+        r = await exec("python3", [`${dir}/monitor.py`, "--app", "--config-dir", dir], { timeout: 20000 });
       } catch (e) {
-        error = `Can't run python3: ${e?.message ?? e}`;
+        const why = String(e?.message ?? e);
+        // a slow run is tried again on the next poll; a python3 that can't start is not
+        if (/cannot run/i.test(why)) this.halted = true;
+        error = this.halted ? NO_PYTHON : why;
+      }
+      if (r && noPython(r)) {
+        this.halted = true;
+        error = NO_PYTHON;
+      } else if (r && r.code === 0) {
+        try {
+          readings = JSON.parse(r.stdout).readings ?? {};
+        } catch {
+          error = "monitor.py printed something that isn't a reading";
+        }
+      } else if (r) {
+        error = r.stderr.trim().split("\n").pop() || `monitor.py exited with ${r.code}`;
       }
       this.busy = false;
       // Every redraw redraws the whole window: only when what's shown changes.
@@ -99,6 +121,12 @@ export default class ContextMonitor extends View {
       this.error = error;
       cx.notify();
     });
+  }
+
+  // Python may be there now: poll again.
+  retry(cx) {
+    this.halted = false;
+    this.poll(cx);
   }
 
   row(t, a, r, narrow) {
@@ -188,7 +216,36 @@ export default class ContextMonitor extends View {
         ),
       )
       .when(!shown.length && !narrow, (el) =>
-        el.child(div().px(16).pb(overlay ? 4 : 0).text_size(12).text_color(this.error ? t.ansi1 : t.dim).child(note)),
+        el.child(
+          div()
+            .id("ctx-note")
+            .px(16)
+            .pb(overlay ? 4 : 0)
+            .text_size(12)
+            .text_color(this.error ? t.ansi1 : t.dim)
+            .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
+            .child(note),
+        ),
+      )
+      // The rail has no room for the note: a red mark that says it on hover (and retries, when
+      // polling stopped for want of Python).
+      .when(narrow && Boolean(this.error), (el) =>
+        el.child(
+          h_flex()
+            .id("ctx-note-mark")
+            .h(28)
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .rounded(8)
+            .text_size(12)
+            .font_bold()
+            .text_color(t.ansi1)
+            .hover((s) => s.bg(t.hover))
+            .tooltip(this.error)
+            .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
+            .child("!"),
+        ),
       )
       .when(Boolean(overlay), (el) => el.child(v_flex().px(8).children(rows)))
       .when(!overlay, (el) =>
