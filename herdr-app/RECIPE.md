@@ -9,11 +9,8 @@ that agent. It can also float as a small window instead.
 
 ## What you see
 
-It is the Herdr app version of the
-[herdr-context-monitor](https://github.com/EMRahman/herdr-context-monitor) TUI
-plugin and uses the same `monitor.py`. It is only the panel: dock it under the
-Agents list in your own layout (see **Built from**), or open it as a floating
-window.
+Dock the panel under the Agents list in your own Herdr app layout (see
+**Built from**), or open it as a floating window.
 
 - **A window**, 300px wide and as tall as its lines, in Herdr's own window frame
   (theme background, border, rounded corners, shadow). It opens where it was
@@ -45,8 +42,8 @@ window.
 ## How it behaves
 
 - Every 5 seconds, while at least one agent is on this computer, it runs
-  `python3 mods/context-monitor/monitor.py --app --config-dir mods/context-monitor`
-  and redraws only when a reading or the error changes.
+  the `monitor.py` shipped with the mod and redraws only when a reading or the
+  error changes.
 - Agent status (working, blocked, done, idle) doesn't change a line's look; the
   focused agent's line has `selected` behind it, and `hover` under the pointer.
 - **Hover** a line: a tooltip `Context 66% left · 68k of 200k tokens` (counts as
@@ -86,18 +83,18 @@ window.
   (`shared("layout")`) is the one `dock.py` built and `main.json` differs from
   the `main_text` it recorded, it calls `notify`, remembering the new `main`'s
   fingerprint in `localStorage`.
-- `monitor.py`: the TUI plugin's script, unchanged; `--app` prints one reading
-  as JSON and exits. It reads terminals from herdr-core (`hc ls --json`, then
+- `monitor.py` prints a snapshot of readings as JSON and exits. It reads
+  terminals from herdr-core (`hc ls --json`, then
   `hc get <t> --json` for each `claude-code` or `codex` terminal: its foreground
   process's pid and folder, and its title), then finds each session:
   - Claude Code: `~/.claude/sessions/<pid>.json` names the session; its
     transcript is `~/.claude/projects/*/<session>.jsonl`.
-  - Codex: the one rollout the process has open (`lsof -p <pid>`); with Codex's
-    shared daemon holding several, the plugin's title-and-folder matching against
-    `~/.codex/session_index.jsonl` and each rollout's first line.
-  - Usage and window: as the plugin computes them (Claude's `/context` output,
-    then `config.json` `context_windows`, then 1M past 200k, else 200k; Codex's
-    `model_context_window`).
+  - Codex: the one rollout the process has open (`lsof -p <pid>`). If a shared
+    daemon holds several, the monitor matches by title and working directory
+    using `~/.codex/session_index.jsonl` and each rollout's first line.
+  - Claude's window comes from `/context`, then `context_windows` in the mod's
+    `config.json`, then 1M past 200k, else 200k. Codex's comes from
+    `model_context_window` in its transcript or a configured window.
   - How far each transcript was read is kept in
     `~/.cache/herdr-context-monitor/app-state.json`, so each run reads only what
     was appended.
@@ -138,13 +135,11 @@ window.
   installed under another name.
 - `herdr-app check` writes `gpui-kit.d.ts` and `jsconfig.json` into the folder
   it checks; they aren't part of the mod.
-- Only agents on this computer get readings: `monitor.py` reads local
-  transcripts, so remote agents (`vps/t7`) are skipped. Antigravity CLI, which
-  the TUI plugin supports, gets none: herdr-core doesn't say which session it runs.
+- Only Claude Code and Codex agents on this computer get readings.
 - A Claude session that hasn't answered yet has no transcript, so no line.
 - Without `/context` output or a configured window, Claude counts against 200k
   until a request passes 200k. For a 1M model, add to `config.json` in the mod's
-  folder (or the TUI plugin's config folder, read when the mod has none):
+  folder:
   `{ "context_windows": { "claude-opus-5-5": 1000000 } }`.
 - Don't animate or redraw on a timer: the poll only calls `cx.notify()` when
   something shown changed.
@@ -177,5 +172,5 @@ window.
 - With the panel docked by `dock.py` and shown, a `main.json` that differs from
   the recorded one brings one "Herdr updated its main layout" toast, and none
   on the next start for the same `main`.
-- `python3 mods/context-monitor/monitor.py --app` prints
+- `python3 mods/context-monitor/monitor.py` prints
   `{"readings": {"t3": {"pct": …, "used": …, "window": …}}}` for the same agents.

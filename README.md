@@ -3,77 +3,18 @@
 [![CI](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**See how full each AI agent's context window is, right next to that agent in
-[Herdr](https://herdr.dev).** The reading turns red above 50%, a good time to
-compact or start a fresh session. It works in the Herdr TUI (terminal) and the
-Herdr app (desktop), for Claude Code and OpenAI Codex, plus Antigravity CLI in
-the TUI. One Python file, no build step, no dependencies.
+See how full each Claude Code and Codex agent’s context window is in the
+[Herdr desktop app](https://herdr.dev). Context Monitor adds a panel under the
+Agents list or opens as a floating window. The fullest sessions appear first,
+and readings above 50% turn bold red. Hover for token counts or click a row to
+jump to that agent.
 
-| In the terminal (Herdr TUI) | In the Herdr app (desktop) |
-| --- | --- |
-| <img src="docs/tui-sidebar.png" height="340" alt="Herdr's agent sidebar in the terminal: each agent has a second row such as ⛁ 34%, and 63% is in bold red"> | <img src="herdr-app/preview.png" width="400" alt="The Herdr app's Context panel: five Claude Code and Codex agents, fullest first, from 72% in red down to 6%"><br>A Context panel under the Agents list, fullest first. |
+<img src="herdr-app/preview.png" width="400" alt="The Herdr desktop app’s Context panel shows five agents, from 72% in red down to 6%">
 
 ## Install
 
-Pick the Herdr you use:
-
-- **Herdr TUI (terminal).** The easiest way: ask an agent running in Herdr to
-  "set up herdr-context-monitor following its README"
-  ([what it does](#setup-with-a-coding-agent)). By hand, run
-  `herdr plugin install EMRahman/herdr-context-monitor`, add the sidebar row
-  from [TUI Configuration](#tui-configuration), then restart the Herdr server.
-- **Herdr app (desktop).** Paste this to an agent in the app:
-
-  ```text
-  Read ~/.config/herdr-app/AGENTS.md, then add this mod under my Agents list: github.com/EMRahman/herdr-context-monitor/tree/main/herdr-app
-  ```
-
-  Or, from a clone of this repository, run `python3 herdr-app/dock.py`. See
-  [Herdr app](#herdr-app-desktop) for the other options.
-
-It needs `python3` 3.9 or later on macOS or Linux. On macOS, the one from
-Xcode's Command Line Tools is enough (`xcode-select --install`).
-
-## Minimal by design
-
-It does one thing: context use per agent. It has no rate limits, cost
-tracking, dashboards, popups or notifications, and adds nothing to your screen
-beyond the reading itself.
-
-- **In the terminal, one row.** A `⛁ 34%` line under each agent in Herdr's own
-  sidebar, through Herdr's built-in sidebar rows. No pane, bar or popup of its
-  own.
-- **In the Herdr app, one panel.** A Context section under the Agents list,
-  one line per agent, or a small floating window. See [Herdr app](#herdr-app-desktop).
-- **One file, nothing to build.** `monitor.py` is just over 500 lines and uses
-  only Python's standard library. It needs `python3` 3.9 or later; on macOS,
-  the one from Xcode's Command Line Tools is enough.
-- **Cheap to run.** Every 5 seconds it reads only what each transcript gained
-  since the last check, and updates Herdr only when a reading changes.
-- **Windows from the agent where it says.** Codex's window comes from its
-  transcript and Claude's from `/context` or your config; otherwise Claude
-  falls back to 200k, or 1M once use passes 200k (see
-  [Context window sizes](#context-window-sizes)). A pane it can't match to a
-  session shows nothing rather than a guess.
-
-## Herdr app (desktop)
-
-The [Herdr app](https://herdr.dev) gets the same readings from a mod,
-[`herdr-app/mods/context-monitor`](herdr-app/mods/context-monitor): a Context
-panel with one `⛁ 34%` line per agent, fullest first, bold red above 50%. Hover
-a line for the tokens behind it; click it to go to that agent. It runs this
-repository's `monitor.py` in a one-shot `--app` mode every 5 seconds. That mode
-reads terminals from herdr-core (`hc`) instead of the Herdr TUI. It covers
-Claude Code and Codex agents on the same computer as the app. It needs `python3`
-3.9 or later. On macOS, the one from Xcode's Command Line Tools is enough
-(`xcode-select --install`). Without it, the panel says so once and waits for a
-click to try again, rather than bringing up macOS's install prompt every 5
-seconds.
-
-<img src="herdr-app/preview.png" width="400" alt="The Herdr app's Context panel: five Claude Code and Codex agents, fullest first, from 72% in red down to 6%">
-
-As Herdr asks of shared mods, the mod is only the panel: where it goes in your
-window is up to you. There are three ways to place it.
+The mod requires Python 3.9 or later and uses the standard library. On macOS,
+you can install Python with Xcode’s Command Line Tools (`xcode-select --install`).
 
 **Ask your agent.** Paste this to an agent in the Herdr app. It follows
 [`herdr-app/RECIPE.md`](herdr-app/RECIPE.md) and adds the panel to the layout
@@ -83,25 +24,24 @@ you use.
 Read ~/.config/herdr-app/AGENTS.md, then add this mod under my Agents list: github.com/EMRahman/herdr-context-monitor/tree/main/herdr-app
 ```
 
-**Dock it with the helper.** From a checkout of this repository:
+**Dock it with the helper.** Run this command from a clone of this repository
+to install or update the mod.
 
 ```bash
 python3 herdr-app/dock.py
 ```
 
-This installs or updates the mod and checks it, then docks the panel under
-Agents:
+The helper checks the mod and docks the panel under Agents.
 
-- **In your own layout, if one is on screen** (one you or another mod made, not
-  one of Herdr's built-in layouts), it only adds the Context block after the
-  Agents list. That layout stays yours: the helper never rebuilds it.
-- **Otherwise in `main-context`**, a layout it builds: Herdr's own `main` with a
-  Context section under Agents. Herdr's built-in layouts are read-only, so the
-  section needs a layout of your own. `ctrl-shift-l` switches back to `main`.
+- **In your own layout, if one is on screen**, it inserts the Context block
+  after the Agents list and keeps the rest of the layout intact.
+- **In `main-context`, if a built-in layout is on screen**, it clones Herdr's
+  `main` layout and adds a Context section under Agents. `ctrl-shift-l` switches
+  back to `main`.
 
 It remembers where it docked and uses that next time. `--layout <name>` docks in
-another layout, and `--layout main-context` goes back to the built one; either
-way the panel leaves the old layout.
+another layout, and `--layout main-context` goes back to the built one. Moving
+the panel removes it from its previous layout.
 
 Herdr never updates a layout of your own. For `main-context`, when a Herdr update
 changes `main`, the panel shows a toast, "Re-run dock.py to update main-context".
@@ -124,111 +64,23 @@ herdr-app do mod.open --name context-monitor
 The window comes back after a restart until you close it with its `×`. Run the
 same `mod.open` command to open or close it again.
 
-The mod reads the window sizes from `config.json` in its folder, or from the TUI
-plugin's (see [Context window sizes](#context-window-sizes)).
-`herdr-app/mods/context-monitor/monitor.py` is a copy of `monitor.py`, and a
-test checks that the two stay the same.
+## Moving from the TUI plugin
 
-## TUI plugin: install and update
+The TUI plugin is retired. Install the desktop mod using one of the options
+above. If you set custom context windows for the TUI plugin, run
+`herdr plugin config-dir context-monitor` to find its `config.json`. Copy its
+`context_windows` entries into the desktop mod’s `config.json` and keep any
+existing desktop overrides. [Context window sizes](#context-window-sizes)
 
-```bash
-herdr plugin install EMRahman/herdr-context-monitor
-```
-
-Or link locally during development:
-
-```bash
-herdr plugin link /path/to/herdr-context-monitor
-```
-
-To update an installed GitHub plugin to the latest default-branch revision:
-
-```bash
-herdr plugin install EMRahman/herdr-context-monitor --yes
-```
-
-Changes in an open pull request are available only on its branch until merged.
-To try one before merging, add `--ref <branch-name>` to the install command.
-Updating the plugin does not modify your sidebar configuration; merge the
-configuration below separately.
-
-## Setup with a coding agent
-
-Ask an agent running on the Herdr host to "set up herdr-context-monitor
-following its README". Agents should follow these steps in order:
-
-1. Install or upgrade the plugin:
-   `herdr plugin install EMRahman/herdr-context-monitor --yes`
-2. Back up `~/.config/herdr/config.toml`, then merge the row from
-   [TUI Configuration](#tui-configuration) into it. Edit the existing
-   `[ui.sidebar.agents]` section if there is one. Keep the user's other rows,
-   replace any `$ctx_pct`, `$ctx_unit`, `$ctx_icon` or `$ctx_display*`
-   entries with the new row, and do not add a second `[ui.sidebar.agents]`
-   section. Validate with `herdr config check`.
-3. Apply the configuration with `herdr server reload-config`.
-4. Publish a reading with
-   `herdr plugin action invoke refresh --plugin context-monitor`, then confirm
-   `herdr api snapshot` contains `ctx_label` or `ctx_label_high`.
-5. Ask the user to restart the Herdr server (`herdr server stop`, then run
-   `herdr`) so continuous monitoring uses the installed code. Do not do this
-   yourself: stopping the server ends every pane, including your own session.
-
-Steps 2 and 3 apply to the machine that displays Herdr. If the user attaches
-with `herdr --remote`, repeat them on the client machine too (see
-[Remote terminal access](#remote-terminal-access)).
-
-## TUI Configuration
-
-Add to `~/.config/herdr/config.toml`:
-
-```toml
-[ui.sidebar.agents]
-rows = [
-  ["state_icon", "agent", "tab"],
-  [
-    { token = "$ctx_label", fg = "#71717a" },
-    { token = "$ctx_label_high", fg = "#ef4444", bold = true }
-  ]
-]
-```
-
-<img src="docs/tui-sidebar.png" width="239" alt="The resulting sidebar: each agent has a second row with its context usage">
-
-The second row shows an icon and a single percentage, such as `⛁ 3%`. Herdr
-puts a `·` between tokens in a row, so the monitor reports the icon and
-percentage as one value. It reports `ctx_label` at 50% or below and
-`ctx_label_high` above 50%, clearing the inactive token so only one is visible.
-This preserves red, bold styling for high usage. To show the percentage without
-the icon, use `$ctx_display` and `$ctx_display_high` instead; they follow the
-same rule. The numeric `ctx_pct` and legacy `ctx_unit` tokens remain available
-for existing consumers. Merge these rows into an existing `[ui.sidebar.agents]`
-section rather than adding a duplicate section. After updating the plugin and
-the configuration, use Herdr's **reload config** menu action to refresh the
-sidebar.
-
-After installing or upgrading the plugin in an already running server, restart
-the Herdr server to start continuous monitoring with the installed code. An
-existing monitor keeps running the code it loaded before the upgrade, so it
-will not continuously publish the new display tokens. Reloading the sidebar
-configuration alone does not restart the monitor. The monitor exits when the
-server that started it stops, so a restart does not leave an old copy running.
-
-To publish a single reading immediately, invoke the refresh action:
-
-```bash
-herdr plugin action invoke refresh --plugin context-monitor
-```
-
-This action runs once and does not start or restart continuous monitoring. It
-does not replace the server restart after installation or upgrade. The
-manifest's startup hook starts continuous monitoring when the Herdr server
-starts; attaching a client, reloading configuration, and enabling a plugin do
-not run startup hooks. Herdr does not supervise startup hooks as daemons.
+To clean up the old installation, run `herdr plugin uninstall context-monitor`
+and remove the context monitor’s `$ctx_*` entries from `[ui.sidebar.agents]` in
+`~/.config/herdr/config.toml`. [Herdr plugin documentation](https://herdr.dev/tui/docs/plugins/#install-and-link)
 
 ## Context window sizes
 
 Usage is a share of the model's context window. Codex records its window in
-the transcript; Claude Code does not, so for Claude the monitor uses, in order:
+the transcript. The monitor checks the following sources for Claude Code in
+order.
 
 1. the window from the session's most recent `/context` output, such as
    `107.9k/1m tokens (11%)`
@@ -236,9 +88,8 @@ the transcript; Claude Code does not, so for Claude the monitor uses, in order:
 3. 1M, once a request has gone past 200k tokens
 4. 200k
 
-If your Claude model runs with a 1M window, set it so readings are not five
-times too high before you run `/context`. Create `config.json` in the
-directory printed by `herdr plugin config-dir context-monitor`:
+This example sets a 1M window for Claude Opus 5.5 in
+`~/.config/herdr-app/mods/context-monitor/config.json`.
 
 ```json
 {
@@ -249,20 +100,17 @@ directory printed by `herdr plugin config-dir context-monitor`:
 ```
 
 Keys are model id prefixes, and the longest matching prefix wins. The same
-setting supplies a Codex model's window when its transcript does not state
-one; without either, that Codex pane shows no reading. The file is read on
-every poll, so no restart is needed.
+setting supplies a Codex model's window when its transcript omits it. A Codex
+session needs a window from one of those sources to appear. Changes take effect
+on the next poll.
 
 ## How it works
 
-- **Continuous Context Tracking**: Every 5 seconds, reads what each agent's session transcript gained and computes usage against its context window (see [Context window sizes](#context-window-sizes)).
-  - **Antigravity CLI**: 1M token window
-  - **Claude Code**: the window from the session's latest `/context` output, else a [configured](#context-window-sizes) window for the model, else 1M once usage passes 200k, else 200k
-  - **OpenAI Codex**: the window Codex records in the transcript (`model_context_window`)
-- **Readings only for the right session**: each pane is matched by its Herdr session id. Without one, a reading is guessed only for the single pane of that agent in a folder. When no reading can be made, the pane shows nothing rather than `0%`.
-- **Codex title matching stays in the folder**: a title match must also have the pane's recorded working directory. If multiple sessions in that folder match the title, the reading is left blank.
-- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
-- **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
+Every five seconds the mod reads new entries from local Claude Code and Codex
+transcripts. It uses the agent’s session ID when available. Otherwise it searches
+by working directory when that folder has a single terminal for the agent. A
+Codex title match must also match the terminal’s working directory. Remote agents
+and sessions without a usable reading are omitted.
 
 ## Why highlight usage above 50%?
 
@@ -289,23 +137,6 @@ study. The research behind it:
   (Anthropic, September 2025). Describes context as a finite "attention
   budget" and recommends compaction, note-taking and sub-agents for long
   tasks.
-
-## Remote terminal access
-
-Install the context monitor on the machine running the agents: it reads their
-local transcript files and publishes context metadata to that machine's Herdr
-server.
-
-- **SSH into the Mac Mini, then run Herdr there:** the monitor and sidebar
-  configuration on the Mini are used. No monitor installation on the MacBook
-  is needed.
-- **Run `herdr --remote <mini-ssh-target>` on the MacBook:** the monitor stays
-  on the Mini, but the sidebar layout comes from the MacBook's local
-  `~/.config/herdr/config.toml`. Add the rows above there too. No second monitor
-  installation is needed unless agents also run locally on the MacBook.
-
-See Herdr's [configuration documentation](https://herdr.dev/docs/configuration/)
-for client-local presentation settings during remote attach.
 
 ## Tests
 
