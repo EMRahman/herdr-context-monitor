@@ -3,14 +3,43 @@
 [![CI](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**A minimal context meter for [Herdr](https://herdr.dev): one Python file, no
-build step, no dependencies.** It shows how full each agent's context window
-is, right under that agent in the sidebar, and turns red above 50%. It supports
-Claude Code, OpenAI Codex and Antigravity CLI.
+**See how full each AI agent's context window is, right next to that agent in
+[Herdr](https://herdr.dev).** The reading turns red above 50%, a good time to
+compact or start a fresh session. It works in the Herdr TUI (terminal), the
+Herdr app (desktop) and the browser, for Claude Code and OpenAI Codex, plus
+Antigravity CLI in the TUI. One Python file, no build step, no dependencies.
 
 | In the terminal (Herdr TUI) | In the browser ([herdr-web-ui](#web-ui-integration-companion-dependency)) |
 | --- | --- |
 | <img src="docs/tui-sidebar.png" height="340" alt="Herdr's agent sidebar in the terminal: each agent has a second row such as ⛁ 34%, and 63% is in bold red"> | <img src="docs/web-ui-sidebar.png" height="340" alt="The web UI's agent list: each agent has a small context badge, the 63% badge is red, and hovering it shows Context 37% left · 126k of 200k tokens"> |
+
+**In the Herdr app (desktop):** a Context panel under the Agents list, fullest first.
+
+<img src="herdr-app/preview.png" width="320" alt="The Herdr app's Context panel: two Claude Code agents at 11% and 18%">
+
+## Install
+
+Pick the Herdr you use:
+
+- **Herdr TUI (terminal).** The easiest way: ask an agent running in Herdr to
+  "set up herdr-context-monitor following its README"
+  ([what it does](#setup-with-a-coding-agent)). By hand, run
+  `herdr plugin install EMRahman/herdr-context-monitor`, add the sidebar row
+  from [TUI Configuration](#tui-configuration), then restart the Herdr server.
+- **Herdr app (desktop).** Paste this to an agent in the app:
+
+  ```text
+  Read ~/.config/herdr-app/AGENTS.md, then add this mod under my Agents list: github.com/EMRahman/herdr-context-monitor/tree/main/herdr-app
+  ```
+
+  Or, from a clone of this repository, run `python3 herdr-app/dock.py`. See
+  [Herdr app](#herdr-app-desktop) for the other options.
+- **Browser.** Install the TUI plugin, then
+  [EMRahman/herdr-web-ui](#web-ui-integration-companion-dependency):
+  `herdr plugin install github:EMRahman/herdr-web-ui`.
+
+It needs `python3` 3.9 or later on macOS or Linux. On macOS, the one from
+Xcode's Command Line Tools is enough (`xcode-select --install`).
 
 ## Minimal by design
 
@@ -24,7 +53,9 @@ beyond the reading itself.
 - **In the browser, one badge.** [herdr-web-ui](#web-ui-integration-companion-dependency)
   shows the same reading as a small badge next to each agent. Hover it to see
   what's left and the tokens behind it.
-- **One file, nothing to build.** `monitor.py` is under 400 lines and uses
+- **In the Herdr app, one panel.** A Context section under the Agents list,
+  one line per agent, or a small floating window. See [Herdr app](#herdr-app-desktop).
+- **One file, nothing to build.** `monitor.py` is just over 500 lines and uses
   only Python's standard library. It needs `python3` 3.9 or later; on macOS,
   the one from Xcode's Command Line Tools is enough.
 - **Cheap to run.** Every 5 seconds it reads only what each transcript gained
@@ -34,40 +65,6 @@ beyond the reading itself.
   falls back to 200k, or 1M once use passes 200k (see
   [Context window sizes](#context-window-sizes)). A pane it can't match to a
   session shows nothing rather than a guess.
-
-## How it works
-
-- **Continuous Context Tracking**: Every 5 seconds, reads what each agent's session transcript gained and computes usage against its context window (see [Context window sizes](#context-window-sizes)).
-  - **Antigravity CLI**: 1M token window
-  - **Claude Code**: the window from the session's latest `/context` output, else a [configured](#context-window-sizes) window for the model, else 1M once usage passes 200k, else 200k
-  - **OpenAI Codex**: the window Codex records in the transcript (`model_context_window`)
-- **Readings only for the right session**: each pane is matched by its Herdr session id. Without one, a reading is guessed only for the single pane of that agent in a folder. When no reading can be made, the pane shows nothing rather than `0%`.
-- **Codex title matching stays in the folder**: a title match must also have the pane's recorded working directory. If multiple sessions in that folder match the title, the reading is left blank.
-- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), the token counts behind them (`ctx_used=<tokens>`, `ctx_window=<tokens>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
-- **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
-
-## Installation
-
-```bash
-herdr plugin install EMRahman/herdr-context-monitor
-```
-
-Or link locally during development:
-
-```bash
-herdr plugin link /path/to/herdr-context-monitor
-```
-
-To update an installed GitHub plugin to the latest default-branch revision:
-
-```bash
-herdr plugin install EMRahman/herdr-context-monitor --yes
-```
-
-Changes in an open pull request are available only on its branch until merged.
-To try one before merging, add `--ref <branch-name>` to the install command.
-Updating the plugin does not modify your sidebar configuration; merge the
-configuration below separately.
 
 ## Herdr app (desktop)
 
@@ -88,10 +85,13 @@ seconds.
 As Herdr asks of shared mods, the mod is only the panel: where it goes in your
 window is up to you. There are three ways to place it.
 
-**Ask your agent.** In the Herdr app, ask an agent to "add the mod in herdr-app/
-of github.com/EMRahman/herdr-context-monitor under my Agents list". It follows
+**Ask your agent.** Paste this to an agent in the Herdr app. It follows
 [`herdr-app/RECIPE.md`](herdr-app/RECIPE.md) and adds the panel to the layout
 you use.
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this mod under my Agents list: github.com/EMRahman/herdr-context-monitor/tree/main/herdr-app
+```
 
 **Dock it with the helper.** From a checkout of this repository:
 
@@ -138,6 +138,29 @@ The mod reads the window sizes from `config.json` in its folder, or from the TUI
 plugin's (see [Context window sizes](#context-window-sizes)).
 `herdr-app/mods/context-monitor/monitor.py` is a copy of `monitor.py`, and a
 test checks that the two stay the same.
+
+## TUI plugin: install and update
+
+```bash
+herdr plugin install EMRahman/herdr-context-monitor
+```
+
+Or link locally during development:
+
+```bash
+herdr plugin link /path/to/herdr-context-monitor
+```
+
+To update an installed GitHub plugin to the latest default-branch revision:
+
+```bash
+herdr plugin install EMRahman/herdr-context-monitor --yes
+```
+
+Changes in an open pull request are available only on its branch until merged.
+To try one before merging, add `--ref <branch-name>` to the install command.
+Updating the plugin does not modify your sidebar configuration; merge the
+configuration below separately.
 
 ## Setup with a coding agent
 
@@ -239,6 +262,17 @@ Keys are model id prefixes, and the longest matching prefix wins. The same
 setting supplies a Codex model's window when its transcript does not state
 one; without either, that Codex pane shows no reading. The file is read on
 every poll, so no restart is needed.
+
+## How it works
+
+- **Continuous Context Tracking**: Every 5 seconds, reads what each agent's session transcript gained and computes usage against its context window (see [Context window sizes](#context-window-sizes)).
+  - **Antigravity CLI**: 1M token window
+  - **Claude Code**: the window from the session's latest `/context` output, else a [configured](#context-window-sizes) window for the model, else 1M once usage passes 200k, else 200k
+  - **OpenAI Codex**: the window Codex records in the transcript (`model_context_window`)
+- **Readings only for the right session**: each pane is matched by its Herdr session id. Without one, a reading is guessed only for the single pane of that agent in a folder. When no reading can be made, the pane shows nothing rather than `0%`.
+- **Codex title matching stays in the folder**: a title match must also have the pane's recorded working directory. If multiple sessions in that folder match the title, the reading is left blank.
+- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), the token counts behind them (`ctx_used=<tokens>`, `ctx_window=<tokens>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
+- **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
 
 ## Why highlight usage above 50%?
 

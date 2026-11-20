@@ -1,17 +1,19 @@
 # Context Monitor
 
-A Context panel that shows how full each agent's context window is: one
-line per Claude Code or Codex agent on this computer, its space, its title and
-`⛁ 34%`, in bold red above 50%. Hovering a line shows what's left and the tokens
-behind it; clicking it goes to that agent. It is the Herdr app version of the
-[herdr-context-monitor](https://github.com/EMRahman/herdr-context-monitor) TUI
-plugin and uses the same `monitor.py`. It is only the panel: dock it under the
-Agents list in your own layout (see **Built from**), or open it as a floating
-window.
+A small panel under your Agents list that shows how full each Claude Code or
+Codex agent's context window is, one line per agent, fullest first and red above
+50%. Hover a line for what's left and the tokens behind it; click it to jump to
+that agent. It can also float as a small window instead.
 
 ![Context Monitor](preview.png)
 
 ## What you see
+
+It is the Herdr app version of the
+[herdr-context-monitor](https://github.com/EMRahman/herdr-context-monitor) TUI
+plugin and uses the same `monitor.py`. It is only the panel: dock it under the
+Agents list in your own layout (see **Built from**), or open it as a floating
+window.
 
 - **A window**, 300px wide and as tall as its lines, in Herdr's own window frame
   (theme background, border, rounded corners, shadow). It opens where it was
