@@ -5,17 +5,13 @@
 
 **See how full each AI agent's context window is, right next to that agent in
 [Herdr](https://herdr.dev).** The reading turns red above 50%, a good time to
-compact or start a fresh session. It works in the Herdr TUI (terminal), the
-Herdr app (desktop) and the browser, for Claude Code and OpenAI Codex, plus
-Antigravity CLI in the TUI. One Python file, no build step, no dependencies.
+compact or start a fresh session. It works in the Herdr TUI (terminal) and the
+Herdr app (desktop), for Claude Code and OpenAI Codex, plus Antigravity CLI in
+the TUI. One Python file, no build step, no dependencies.
 
-| In the terminal (Herdr TUI) | In the browser ([herdr-web-ui](#web-ui-integration-companion-dependency)) |
+| In the terminal (Herdr TUI) | In the Herdr app (desktop) |
 | --- | --- |
-| <img src="docs/tui-sidebar.png" height="340" alt="Herdr's agent sidebar in the terminal: each agent has a second row such as ⛁ 34%, and 63% is in bold red"> | <img src="docs/web-ui-sidebar.png" height="340" alt="The web UI's agent list: each agent has a small context badge, the 63% badge is red, and hovering it shows Context 37% left · 126k of 200k tokens"> |
-
-**In the Herdr app (desktop):** a Context panel under the Agents list, fullest first.
-
-<img src="herdr-app/preview.png" width="320" alt="The Herdr app's Context panel: two Claude Code agents at 11% and 18%">
+| <img src="docs/tui-sidebar.png" height="340" alt="Herdr's agent sidebar in the terminal: each agent has a second row such as ⛁ 34%, and 63% is in bold red"> | <img src="herdr-app/preview.png" width="320" alt="The Herdr app's Context panel under the Agents list: two Claude Code agents at 11% and 18%"><br>A Context panel under the Agents list, fullest first. |
 
 ## Install
 
@@ -34,9 +30,6 @@ Pick the Herdr you use:
 
   Or, from a clone of this repository, run `python3 herdr-app/dock.py`. See
   [Herdr app](#herdr-app-desktop) for the other options.
-- **Browser.** Install the TUI plugin, then
-  [EMRahman/herdr-web-ui](#web-ui-integration-companion-dependency):
-  `herdr plugin install github:EMRahman/herdr-web-ui`.
 
 It needs `python3` 3.9 or later on macOS or Linux. On macOS, the one from
 Xcode's Command Line Tools is enough (`xcode-select --install`).
@@ -50,9 +43,6 @@ beyond the reading itself.
 - **In the terminal, one row.** A `⛁ 34%` line under each agent in Herdr's own
   sidebar, through Herdr's built-in sidebar rows. No pane, bar or popup of its
   own.
-- **In the browser, one badge.** [herdr-web-ui](#web-ui-integration-companion-dependency)
-  shows the same reading as a small badge next to each agent. Hover it to see
-  what's left and the tokens behind it.
 - **In the Herdr app, one panel.** A Context section under the Agents list,
   one line per agent, or a small floating window. See [Herdr app](#herdr-app-desktop).
 - **One file, nothing to build.** `monitor.py` is just over 500 lines and uses
@@ -271,7 +261,7 @@ every poll, so no restart is needed.
   - **OpenAI Codex**: the window Codex records in the transcript (`model_context_window`)
 - **Readings only for the right session**: each pane is matched by its Herdr session id. Without one, a reading is guessed only for the single pane of that agent in a folder. When no reading can be made, the pane shows nothing rather than `0%`.
 - **Codex title matching stays in the folder**: a title match must also have the pane's recorded working directory. If multiple sessions in that folder match the title, the reading is left blank.
-- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), the token counts behind them (`ctx_used=<tokens>`, `ctx_window=<tokens>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
+- **Herdr Integration**: Emits integer metrics (`ctx_pct=<N>`), a percentage unit (`ctx_unit=%`), and sidebar labels (`ctx_label=⛁ <N>%`) via `herdr pane report-metadata`.
 - **TUI Highlighting**: Supports conditional rules in `~/.config/herdr/config.toml` (e.g. bold red alert when context > 50%; see [why 50%](#why-highlight-usage-above-50)).
 
 ## Why highlight usage above 50%?
@@ -316,41 +306,6 @@ server.
 
 See Herdr's [configuration documentation](https://herdr.dev/docs/configuration/)
 for client-local presentation settings during remote attach.
-
-## Web UI Integration (Companion Dependency)
-
-The monitor emits token metadata to `pane.tokens.ctx_pct` via `herdr pane report-metadata`.
-
-* **Stock herdr-web-ui**: Does not show this plugin's readings.
-* **[EMRahman/herdr-web-ui](https://github.com/EMRahman/herdr-web-ui)**: Adds first-class visual badge support in the sidebar agent roster and composer ring (merged via [PR #2](https://github.com/EMRahman/herdr-web-ui/pull/2)), alerting in bold red when context usage exceeds 50%. Hovering a badge shows what's left and the tokens behind it, such as `Context 37% left · 126k of 200k tokens` ([PR #8](https://github.com/EMRahman/herdr-web-ui/pull/8)).
-
-### Architecture & Relationship
-
-```
-┌─────────────────────────────────┐
-│     herdr-context-monitor       │  (Data Provider)
-│   • Runs `monitor.py` daemon    │
-│   • Emits `pane.tokens.ctx_pct` │
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│     Herdr Pane Metadata Bus     │
-└───────────┬──────────────┬──────┘
-            │              │
-            ▼              ▼
-┌────────────────┐  ┌──────────────────────────────────┐
-│   Herdr TUI    │  │       EMRahman/herdr-web-ui      │  (Visual Consumer)
-│  (config.toml) │  │   • Renders ContextBadge in      │
-│  Works natively│  │     AgentSidebar.tsx             │
-└────────────────┘  │   • Highlights > 50% context rot │
-                    └──────────────────────────────────┘
-```
-
-To enable the Web UI badges alongside this plugin:
-```bash
-herdr plugin install github:EMRahman/herdr-web-ui
-```
 
 ## Tests
 
