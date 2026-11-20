@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shutil
 import sys
 import subprocess
 import time
@@ -16,6 +17,17 @@ if not HERDR_BIN or not os.path.exists(HERDR_BIN):
 
 CONFIG_DIR = Path(os.environ.get("HERDR_PLUGIN_CONFIG_DIR")
                   or Path.home() / ".config/herdr/plugins/config/context-monitor")
+# Where config.json is looked for, in order: --app mode puts the mod's own folder first.
+CONFIG_DIRS = [CONFIG_DIR]
+
+# The Herdr desktop app's terminals live in herdr-core, which `hc` drives.
+HC_BIN = shutil.which("hc") or os.path.expanduser("~/.local/bin/hc")
+# Where --app mode keeps how far each transcript has been read, between its one-shot runs.
+APP_STATE = Path.home() / ".cache/herdr-context-monitor/app-state.json"
+# herdr-core's name for each agent (`hc ls`), as this monitor names it.
+APP_AGENTS = {"claude-code": "claude", "claude": "claude", "codex": "codex"}
+# A Codex rollout file, named after its session id.
+ROLLOUT = re.compile(r"/rollout-[^/]*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$")
 
 # Context window sizes (tokens) used when a transcript does not state its own.
 AGY_WINDOW = 1_000_000            # Gemini Pro / Flash 1M window
@@ -41,9 +53,12 @@ _reported = {}
 
 
 def load_context_windows():
-    """Reads {"context_windows": {"<model id prefix>": <tokens>}} from the plugin's config.json."""
+    """Reads {"context_windows": {"<model id prefix>": <tokens>}} from the first config.json found."""
     try:
-        with open(CONFIG_DIR / "config.json", "r", encoding="utf-8") as f:
+        config = next((d / "config.json" for d in CONFIG_DIRS if (d / "config.json").exists()), None)
+        if config is None:
+            return {}
+        with open(config, "r", encoding="utf-8") as f:
             windows = json.load(f).get("context_windows", {})
         return {str(k): int(v) for k, v in windows.items() if int(v) > 0}
     except Exception:
@@ -370,7 +385,134 @@ def update_all_panes():
     _touched.clear()
 
 
+def run_json(args):
+    try:
+        res = subprocess.run(args, capture_output=True, text=True, timeout=10)
+        return json.loads(res.stdout)
+    except Exception:
+        return None
+
+
+def get_app_terminals():
+    """The Herdr app's live agent terminals, from herdr-core: what each runs, its pid, folder and title."""
+    terminals = []
+    for t in (run_json([HC_BIN, "ls", "--json"]) or {}).get("terminals", []):
+        agent = APP_AGENTS.get(t.get("agent"))
+        if t.get("state") != "live" or not agent or not t.get("address"):
+            continue
+        detail = run_json([HC_BIN, "get", t["address"], "--json"]) or {}
+        # the agent runs in the terminal's shell: its own folder can differ from where the shell started
+        foreground = detail.get("foreground") or {}
+        terminals.append({
+            "address": t["address"],
+            "agent": agent,
+            "pid": foreground.get("pid"),
+            "cwd": foreground.get("cwd") or detail.get("cwd") or t.get("cwd") or "",
+            "title": detail.get("title") or "",
+        })
+    return terminals
+
+
+def claude_session_id(pid):
+    """Claude Code records each running process's session in ~/.claude/sessions/<pid>.json."""
+    try:
+        with open(Path.home() / ".claude/sessions" / f"{int(pid)}.json", "r", encoding="utf-8") as f:
+            return json.load(f).get("sessionId") or None
+    except Exception:
+        return None
+
+
+def codex_session_id(pid):
+    """The session whose rollout this Codex process has open; None when it has none or several (a shared daemon)."""
+    try:
+        res = subprocess.run(["lsof", "-a", "-p", str(int(pid)), "-Fn"], capture_output=True, text=True, timeout=5)
+    except Exception:
+        return None
+    ids = {m.group(1) for line in res.stdout.splitlines() if line.startswith("n") and (m := ROLLOUT.search(line))}
+    return ids.pop() if len(ids) == 1 else None
+
+
+def app_readings():
+    """Readings for the Herdr app's agent terminals, by terminal address; unknown ones are left out."""
+    terminals = get_app_terminals()
+    windows = load_context_windows()
+    for t in terminals:
+        find_session = claude_session_id if t["agent"] == "claude" else codex_session_id
+        t["session"] = find_session(t["pid"]) if t["pid"] else None
+    claimed = {t["session"] for t in terminals if t["session"]}
+    per_folder = Counter((t["agent"], t["cwd"]) for t in terminals)
+    readings = {}
+    for t in terminals:
+        may_guess = per_folder[(t["agent"], t["cwd"])] == 1
+        try:
+            if t["agent"] == "claude":
+                current = get_claude_context(t["session"], t["cwd"], may_guess, claimed, windows)
+            else:
+                current = get_codex_context(t["session"], t["cwd"], t["title"], may_guess, claimed, windows)
+        except Exception:
+            current = None
+        if current is not None:
+            readings[t["address"]] = current
+    for path in set(_tails) - _touched:
+        del _tails[path]
+    _touched.clear()
+    return readings
+
+
+def load_app_state(path):
+    """Picks up where the last --app run stopped reading, so each run reads only what transcripts gained."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        tails = {Path(p): {"inode": t["inode"], "offset": t["offset"], "rest": t["rest"].encode("latin-1"),
+                           "state": t["state"]} for p, t in data["tails"].items()}
+        paths = {k: Path(v) for k, v in data["paths"].items()}
+        codex_meta = {Path(p): m for p, m in data["codex_meta"].items()}
+    except Exception:
+        return
+    _tails.update(tails)
+    _paths.update(paths)
+    _codex_meta.update(codex_meta)
+
+
+def save_app_state(path):
+    data = {
+        "tails": {str(p): {"inode": t["inode"], "offset": t["offset"], "rest": t["rest"].decode("latin-1"),
+                           "state": t["state"]} for p, t in _tails.items()},
+        "paths": {k: str(v) for k, v in _paths.items()},
+        "codex_meta": {str(p): m for p, m in _codex_meta.items()},
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # written aside and moved into place, so a run starting meanwhile never reads half a file
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def option(args, name):
+    """The value after --name in args, if given."""
+    return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
+
+
+def run_app(args):
+    """For the Herdr app's mod: one reading of every agent terminal, printed as JSON."""
+    if option(args, "--config-dir"):
+        # the mod's own config.json, else the TUI plugin's, so one setting serves both
+        CONFIG_DIRS.insert(0, Path(option(args, "--config-dir")))
+    state = Path(option(args, "--state") or APP_STATE)
+    load_app_state(state)
+    readings = app_readings()
+    save_app_state(state)
+    print(json.dumps({"readings": readings}))
+
+
 def main():
+    if "--app" in sys.argv:
+        run_app(sys.argv[1:])
+        return
     once = "--once" in sys.argv
     while True:
         try:
