@@ -202,14 +202,20 @@ def find(node, node_id):
 
 
 def reinsert(tree, removed):
-    """Puts removed blocks back beside the same neighbours; returns the ones with nowhere to go."""
+    """Puts removed blocks back beside the same neighbours; returns the ones with nowhere to go,
+    each with a `reason`."""
     lost = []
     for entry in removed:
-        if entry["node"].get("id") and find(tree, entry["node"]["id"]):
+        node_id = entry["node"].get("id")
+        there = find(tree, node_id) if node_id else None
+        if there is not None:
+            # already in place; a different node with its id would make the layout ambiguous
+            if there != entry["node"]:
+                lost.append({**entry, "reason": f"the new layout already has a node with id {node_id}"})
             continue
         parent = find(tree, entry["parent"]) if entry["parent"] else None
         if not parent or not isinstance(parent.get("children"), list):
-            lost.append(entry)
+            lost.append({**entry, "reason": f"Herdr's new main has no {entry['parent']}"})
             continue
         siblings = parent["children"]
         ids_here = [child.get("id") for child in siblings]
@@ -248,24 +254,26 @@ def has_ours(node):
     return is_ours(node) or any(has_ours(child) for child in node.get("children") or [])
 
 
-def add_block(doc, where):
-    """Inserts the Context block right after the Agents list, into its column (never wrapping)."""
+def add_block(doc, where, reserved=()):
+    """Inserts the Context block right after the Agents list, into its column (never wrapping).
+    `reserved`: ids it mustn't take, such as other mods' blocks about to be put back."""
     found = agents_column(doc)
     if not found:
         raise DockError(f"{where} has no Agents list in a sidebar column to dock under. "
                         f"Open the floating window instead: herdr-app do mod.open --name {MOD}")
     agents, column = found
-    taken = set(ids(doc))
-    block_id = next(i for i in ("context", "context-monitor", "context-monitor-2") if i not in taken)
+    taken = set(ids(doc)) | set(reserved)
+    names = ("context", "context-monitor", *(f"context-monitor-{n}" for n in range(2, 1000)))
+    block_id = next(i for i in names if i not in taken)
     column["children"].insert(column["children"].index(agents) + 1, {
         "id": block_id, "type": "block", "size": {"px": 132}, "min": 41, "content": {"mod": MOD},
     })
 
 
-def build(main):
+def build(main, reserved=()):
     """Herdr's main layout with the Context block after its Agents list."""
     doc = copy.deepcopy(main)
-    add_block(doc, "Herdr's main layout")
+    add_block(doc, "Herdr's main layout", reserved)
     res = app("--version", timeout=5)
     version = res.stdout.strip().split()[-1] if res and res.returncode == 0 and res.stdout.strip() else None
     doc["cloned_from"] = {"name": "main", "version": version} if version else {"name": "main"}
@@ -344,18 +352,18 @@ def dock(force=False, show=True):
         backup = layout_path(LAYOUT).with_name(f"{LAYOUT}.json.old-{time.strftime('%Y%m%d-%H%M%S')}")
         shutil.copyfile(layout_path(LAYOUT), backup)
         print(f"Kept your previous layout as {backup}")
-    doc = build(json.loads(s["main_text"]))
-    # other mods' blocks go back beside the same neighbours in the new main
-    lost = []
-    if s["current"] is not None:
-        lost = reinsert(doc, strip(s["current"], foreign_to_us())[1])
+    # other mods' blocks go back beside the same neighbours in the new main; ours keeps clear of
+    # their ids
+    others = strip(s["current"], foreign_to_us())[1] if s["current"] is not None else []
+    doc = build(json.loads(s["main_text"]), {i for e in others for i in ids(e["node"])})
+    lost = reinsert(doc, others)
     if lost:
         backup = layout_path(LAYOUT).with_name(f"{LAYOUT}.json.old-{time.strftime('%Y%m%d-%H%M%S')}")
         if not backup.exists():
             shutil.copyfile(layout_path(LAYOUT), backup)
         for entry in lost:
-            print(f"Couldn't put back the {entry['node'].get('content', {}).get('mod')} block "
-                  f"({entry['node'].get('id')}): Herdr's new main has no {entry['parent']}. "
+            print(f"Couldn't put back the {(entry['node'].get('content') or {}).get('mod')} block "
+                  f"({entry['node'].get('id')}): {entry['reason']}. "
                   f"The previous layout is kept as {backup}.", file=sys.stderr)
     if s["current"] is not None and not s["modified"]:
         # look settings changed in the docked layout win over main's

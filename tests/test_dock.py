@@ -356,6 +356,30 @@ class JoinTests(DockTest):
         self.assertEqual(self.run_main(), 0)
         self.assertIn("context-monitor", self.mods(self.layout("main-context")))
 
+    def test_another_mods_block_that_took_our_old_id_is_kept(self):
+        self.share_main_context()
+        self.run_main("--layout", "herdr-with-usage")
+        # with the panel gone, another mod takes the free id "context"
+        taken = {"id": "context", "type": "block", "content": {"mod": "someone-else"}}
+        layout = self.layout("main-context")
+        self.d.find(layout, "sidebar-lists")["children"].append(taken)
+        self.write_layout("main-context", layout)
+        self.assertEqual(self.run_main("--layout", "main-context"), 0)
+        back = self.layout("main-context")
+        # theirs went in right after agents, so it goes back there; ours takes another id
+        self.assertEqual(self.mods(back), ["spaces", "agents", "someone-else", "context-monitor"])
+        self.assertEqual([c["id"] for c in self.lists(back)], ["spaces", "agents", "context", "context-monitor"])
+        self.assertEqual(back["children"][0]["children"][-1]["id"], "usage-monitor")
+
+    def test_a_different_node_with_a_kept_blocks_id_is_reported_not_skipped(self):
+        tree = {"id": "col", "type": "column", "children": [{"id": "x", "type": "block", "content": {"mod": "spaces"}}]}
+        theirs = {"id": "x", "type": "block", "content": {"mod": "someone-else"}}
+        lost = self.d.reinsert(tree, [{"node": theirs, "parent": "col", "after": None, "before": None}])
+        self.assertEqual([e["node"] for e in lost], [theirs])
+        self.assertIn("id x", lost[0]["reason"])
+        same = {"id": "x", "type": "block", "content": {"mod": "spaces"}}
+        self.assertEqual(self.d.reinsert(tree, [{"node": same, "parent": "col", "after": None, "before": None}]), [])
+
     def test_an_unshared_main_context_goes_with_its_record(self):
         self.status["layout"] = "main"
         self.run_main()
