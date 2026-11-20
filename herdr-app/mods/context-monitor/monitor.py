@@ -34,7 +34,7 @@ AGY_WINDOW = 1_000_000            # Gemini Pro / Flash 1M window
 CLAUDE_STANDARD_WINDOW = 200_000
 CLAUDE_LONG_WINDOW = 1_000_000    # a request past 200k can only have run in the 1M window
 
-CTX_TOKENS = ["ctx_pct", "ctx_unit", "ctx_display", "ctx_display_high", "ctx_label", "ctx_label_high", "ctx_used", "ctx_window"]
+CTX_TOKENS = ["ctx_pct", "ctx_unit", "ctx_display", "ctx_display_high", "ctx_label", "ctx_label_high"]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # The summary line Claude Code's /context prints, e.g. "107.9k/1m tokens (11%)"
@@ -330,9 +330,6 @@ def report_metadata(pane_id, current):
             # Herdr separates tokens in a row with a dot, so the icon shares a value.
             "--token", f"ctx_label{suffix}=⛁ {pct}%",
             "--clear-token", f"ctx_label{inactive_suffix}",
-            # the counts behind the percentage, for clients that show them (the web UI's tooltip)
-            "--token", f"ctx_used={current['used']}",
-            "--token", f"ctx_window={current['window']}",
         ]
     try:
         res = subprocess.run([HERDR_BIN, "pane", "report-metadata", str(pane_id), "--source", "context-monitor", *args],
@@ -372,8 +369,8 @@ def update_all_panes():
         except Exception:
             current = None
 
-        # resent when what a client shows changes: the percentage, the window, or the use to the nearest 1k
-        shown = None if current is None else (current["pct"], round(current["used"] / 1000), current["window"])
+        # resent only when the percentage the sidebar shows changes
+        shown = None if current is None else current["pct"]
         # a failed report is not remembered, so the next poll retries it
         if (pane_id not in _reported or _reported[pane_id] != shown) and report_metadata(pane_id, current):
             _reported[pane_id] = shown

@@ -279,8 +279,10 @@ class ReportingTests(MonitorTest):
 
     def test_low_use_reports_plain_tokens_and_clears_the_high_ones(self):
         args = self.report_args({"pct": 25, "used": 50_000, "window": 200_000})
-        for expected in ("ctx_pct=25", "ctx_label=⛁ 25%", "ctx_display=25%", "ctx_used=50000", "ctx_window=200000"):
+        for expected in ("ctx_pct=25", "ctx_label=⛁ 25%", "ctx_display=25%"):
             self.assertIn(expected, args)
+        # the token counts were only for herdr-web-ui's tooltip
+        self.assertFalse([a for a in args if a.startswith(("ctx_used", "ctx_window"))])
         self.assertEqual(args[args.index("ctx_label_high") - 1], "--clear-token")
 
     def test_use_above_50_reports_the_high_tokens(self):
@@ -314,6 +316,10 @@ class UpdateAllPanesTests(MonitorTest):
         self.m.update_all_panes()
         self.m.update_all_panes()
         self.assertEqual(self.sent, [("w1:p1", 25)])
+        # more tokens that leave the percentage where it was are not resent
+        self.append(self.transcript, [assistant(50_900)])
+        self.m.update_all_panes()
+        self.assertEqual(self.sent, [("w1:p1", 25)])
         self.append(self.transcript, [assistant(100_000)])
         self.m.update_all_panes()
         self.assertEqual(self.sent, [("w1:p1", 25), ("w1:p1", 50)])
@@ -325,7 +331,7 @@ class UpdateAllPanesTests(MonitorTest):
         self.m.update_all_panes()
         self.m.update_all_panes()
         self.assertEqual(self.sent, [("w1:p1", 25), ("w1:p1", 25)])
-        self.assertEqual(self.m._reported, {"w1:p1": (25, 50, 200_000)})
+        self.assertEqual(self.m._reported, {"w1:p1": 25})
 
     def test_closed_panes_and_their_transcripts_are_forgotten(self):
         self.m.update_all_panes()
