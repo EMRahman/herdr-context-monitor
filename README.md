@@ -77,7 +77,11 @@ panel with one `⛁ 34%` line per agent, fullest first, bold red above 50%. Hove
 a line for the tokens behind it; click it to go to that agent. It runs this
 repository's `monitor.py` in a one-shot `--app` mode every 5 seconds. That mode
 reads terminals from herdr-core (`hc`) instead of the Herdr TUI. It covers
-Claude Code and Codex agents on the same computer as the app.
+Claude Code and Codex agents on the same computer as the app. It needs `python3`
+3.9 or later. On macOS, the one from Xcode's Command Line Tools is enough
+(`xcode-select --install`). Without it, the panel says so once and waits for a
+click to try again, rather than bringing up macOS's install prompt every 5
+seconds.
 
 <img src="herdr-app/preview.png" width="320" alt="The Context window: two Claude Code agents at 11% and 18%">
 
