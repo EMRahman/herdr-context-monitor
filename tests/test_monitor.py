@@ -344,6 +344,106 @@ class UpdateAllPanesTests(MonitorTest):
         self.assertEqual(self.sent, [])
 
 
+class AppModeTests(MonitorTest):
+    """--app mode: one-shot readings for the Herdr desktop app's mod, by herdr-core terminal address."""
+
+    def setUp(self):
+        super().setUp()
+        self.transcript = self.write(".claude/projects/-work/s1.jsonl", [assistant(50_000)])
+        self.write(".claude/sessions/101.json", [{"pid": 101, "sessionId": "s1"}])
+        self.terminals = [{"address": "t1", "agent": "claude", "pid": 101, "cwd": "/work", "title": ""}]
+        self.m.get_app_terminals = lambda: [dict(t) for t in self.terminals]
+        self.state = self.home / "state.json"
+
+    def run_app(self, module=None):
+        module = module or self.m
+        with mock.patch("builtins.print") as printed:
+            module.run_app(["--state", str(self.state)])
+        return json.loads(printed.call_args[0][0])["readings"]
+
+    def fresh_module(self):
+        spec = importlib.util.spec_from_file_location("monitor", MONITOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.get_app_terminals = self.m.get_app_terminals
+        return module
+
+    def test_terminals_come_from_herdr_core_with_the_agents_own_folder(self):
+        listing = {"terminals": [
+            {"address": "t1", "agent": "claude-code", "state": "live", "cwd": "/home"},
+            {"address": "t2", "agent": "zsh", "state": "live"},
+            {"address": "t3", "agent": "codex", "state": "finished"},
+        ]}
+        detail = {"cwd": "/home", "title": "fix login", "foreground": {"pid": 101, "cwd": "/work"}}
+        calls = []
+        # setUp replaced get_app_terminals on self.m; a fresh copy has the real one
+        spec = importlib.util.spec_from_file_location("monitor", MONITOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.run_json = lambda args: calls.append(args[1:]) or (listing if args[1] == "ls" else detail)
+        self.assertEqual(module.get_app_terminals(),
+                         [{"address": "t1", "agent": "claude", "pid": 101, "cwd": "/work", "title": "fix login"}])
+        self.assertEqual(calls, [["ls", "--json"], ["get", "t1", "--json"]])
+
+    def test_claude_session_comes_from_its_pid_file(self):
+        self.assertEqual(self.m.claude_session_id(101), "s1")
+        self.assertIsNone(self.m.claude_session_id(999))
+
+    def test_codex_session_comes_from_the_one_rollout_its_process_has_open(self):
+        one = "p7\nn/h/.codex/sessions/2026/11/20/rollout-2026-11-20T10-14-34-01a1f873-632b-7b62-811d-e1c313203a13.jsonl\n"
+        other = "n/h/.codex/sessions/2026/11/20/rollout-2026-11-20T10-16-11-01a1f874-ddf3-7712-812e-8eba89cae628.jsonl\n"
+        with mock.patch.object(self.m.subprocess, "run", return_value=mock.Mock(stdout=one)):
+            self.assertEqual(self.m.codex_session_id(7), "01a1f873-632b-7b62-811d-e1c313203a13")
+        # a shared daemon holds every session's rollout: no telling which is this terminal's
+        with mock.patch.object(self.m.subprocess, "run", return_value=mock.Mock(stdout=one + other)):
+            self.assertIsNone(self.m.codex_session_id(7))
+        with mock.patch.object(self.m.subprocess, "run", side_effect=OSError):
+            self.assertIsNone(self.m.codex_session_id(7))
+
+    def test_readings_are_keyed_by_terminal_and_unknown_ones_left_out(self):
+        self.terminals.append({"address": "t2", "agent": "claude", "pid": 102, "cwd": "/work", "title": ""})
+        self.assertEqual(self.run_app(), {"t1": {"pct": 25, "used": 50_000, "window": 200_000}})
+
+    def test_a_later_run_reads_only_what_the_transcript_gained(self):
+        self.run_app()
+        with open(self.transcript, "a") as f:
+            f.write(json.dumps(assistant(100_000)) + "\n" + '{"type": "assist')
+        later = self.fresh_module()
+        self.assertEqual(self.run_app(later)["t1"]["pct"], 50)
+        self.assertEqual(later._tails[self.transcript]["offset"], self.transcript.stat().st_size)
+        # the unfinished line is kept from one run to the next and completed by what follows
+        with open(self.transcript, "a") as f:
+            f.write('ant", "message": {"usage": {"input_tokens": 150000}}}\n')
+        self.assertEqual(self.run_app(self.fresh_module())["t1"]["pct"], 75)
+
+    def test_an_unreadable_state_file_starts_over(self):
+        self.state.write_text("{not json")
+        self.assertEqual(self.run_app()["t1"]["pct"], 25)
+        self.assertIn(str(self.transcript), json.loads(self.state.read_text())["tails"])
+
+    def test_the_mods_config_comes_first_then_the_plugins(self):
+        mod_dir = self.home / "mod"
+        mod_dir.mkdir()
+        self.config_dir.mkdir()
+        (self.config_dir / "config.json").write_text(json.dumps({"context_windows": {"claude-sonnet": 1_000_000}}))
+        with mock.patch("builtins.print") as printed:
+            self.m.run_app(["--state", str(self.state), "--config-dir", str(mod_dir)])
+        self.assertEqual(json.loads(printed.call_args[0][0])["readings"]["t1"]["window"], 1_000_000)
+        (mod_dir / "config.json").write_text(json.dumps({"context_windows": {"claude-sonnet": 500_000}}))
+        self.assertEqual(self.m.load_context_windows(), {"claude-sonnet": 500_000})
+
+    def test_main_runs_once_in_app_mode(self):
+        self.m.sys.argv = ["monitor.py", "--app", "--state", str(self.state)]
+        with mock.patch("builtins.print"), mock.patch.object(self.m.time, "sleep") as slept:
+            self.m.main()
+        slept.assert_not_called()
+
+    def test_the_mod_ships_the_same_monitor(self):
+        copy = MONITOR.parent / "herdr-app/mods/context-monitor/monitor.py"
+        self.assertEqual(copy.read_bytes(), MONITOR.read_bytes(),
+                         "herdr-app/mods/context-monitor/monitor.py must be a copy of monitor.py")
+
+
 class LifecycleTests(MonitorTest):
     def test_continuous_monitor_does_not_exit_when_its_parent_changes(self):
         self.m.sys.argv = ["monitor.py"]

@@ -69,6 +69,72 @@ To try one before merging, add `--ref <branch-name>` to the install command.
 Updating the plugin does not modify your sidebar configuration; merge the
 configuration below separately.
 
+## Herdr app (desktop)
+
+The [Herdr app](https://herdr.dev) gets the same readings from a mod,
+[`herdr-app/mods/context-monitor`](herdr-app/mods/context-monitor): a Context
+panel with one `⛁ 34%` line per agent, fullest first, bold red above 50%. Hover
+a line for the tokens behind it; click it to go to that agent. It runs this
+repository's `monitor.py` in a one-shot `--app` mode every 5 seconds. That mode
+reads terminals from herdr-core (`hc`) instead of the Herdr TUI. It covers
+Claude Code and Codex agents on the same computer as the app.
+
+<img src="herdr-app/preview.png" width="320" alt="The Context window: two Claude Code agents at 11% and 18%">
+
+As Herdr asks of shared mods, the mod is only the panel: where it goes in your
+window is up to you. There are three ways to place it.
+
+**Ask your agent.** In the Herdr app, ask an agent to "add the mod in herdr-app/
+of github.com/EMRahman/herdr-context-monitor under my Agents list". It follows
+[`herdr-app/RECIPE.md`](herdr-app/RECIPE.md) and adds the panel to the layout
+you use.
+
+**Dock it with the helper.** From a checkout of this repository:
+
+```bash
+python3 herdr-app/dock.py
+```
+
+This installs or updates the mod and checks it, then docks the panel under
+Agents:
+
+- **In your own layout, if one is on screen** (one you or another mod made, not
+  one of Herdr's built-in layouts), it only adds the Context block after the
+  Agents list. That layout stays yours: the helper never rebuilds it.
+- **Otherwise in `main-context`**, a layout it builds: Herdr's own `main` with a
+  Context section under Agents. Herdr's built-in layouts are read-only, so the
+  section needs a layout of your own. `ctrl-shift-l` switches back to `main`.
+
+It remembers where it docked and uses that next time. `--layout <name>` docks in
+another layout, and `--layout main-context` goes back to the built one; either
+way the panel leaves the old layout.
+
+Herdr never updates a layout of your own. For `main-context`, when a Herdr update
+changes `main`, the panel shows a toast, "Re-run dock.py to update main-context".
+Running `python3 herdr-app/dock.py` again rebuilds `main-context` from the new
+`main` and keeps any theme or font you set on it. If you edited `main-context` by
+hand, it isn't replaced; `--force` rebuilds it and keeps a copy of yours. Other
+mods can share `main-context`, such as
+[herdr-usage-monitor](https://github.com/EMRahman/herdr-usage-monitor)'s
+readout: their blocks don't count as edits and stay where they are through a
+rebuild. `--status` shows where things stand, and `--undock` takes the panel out
+(an unshared `main-context` is removed and you're back on `main`).
+
+**Float it.** With no layout changes, copy the mod and open it as a window:
+
+```bash
+cp -R herdr-app/mods/context-monitor ~/.config/herdr-app/mods/
+herdr-app do mod.open --name context-monitor
+```
+
+The window comes back after a restart until you close it with its `×`. Run the
+same `mod.open` command to open or close it again.
+
+The mod reads the window sizes from `config.json` in its folder, or from the TUI
+plugin's (see [Context window sizes](#context-window-sizes)).
+`herdr-app/mods/context-monitor/monitor.py` is a copy of `monitor.py`, and a
+test checks that the two stay the same.
+
 ## Setup with a coding agent
 
 Ask an agent running on the Herdr host to "set up herdr-context-monitor
