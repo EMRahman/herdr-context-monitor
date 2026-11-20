@@ -11,7 +11,7 @@ the TUI. One Python file, no build step, no dependencies.
 
 | In the terminal (Herdr TUI) | In the Herdr app (desktop) |
 | --- | --- |
-| <img src="docs/tui-sidebar.png" height="340" alt="Herdr's agent sidebar in the terminal: each agent has a second row such as ⛁ 34%, and 63% is in bold red"> | <img src="herdr-app/preview.png" width="320" alt="The Herdr app's Context panel under the Agents list: two Claude Code agents at 11% and 18%"><br>A Context panel under the Agents list, fullest first. |
+| <img src="docs/tui-sidebar.png" height="340" alt="Herdr's agent sidebar in the terminal: each agent has a second row such as ⛁ 34%, and 63% is in bold red"> | <img src="herdr-app/preview.png" width="400" alt="The Herdr app's Context panel: five Claude Code and Codex agents, fullest first, from 72% in red down to 6%"><br>A Context panel under the Agents list, fullest first. |
 
 ## Install
 
@@ -70,7 +70,7 @@ Claude Code and Codex agents on the same computer as the app. It needs `python3`
 click to try again, rather than bringing up macOS's install prompt every 5
 seconds.
 
-<img src="herdr-app/preview.png" width="320" alt="The Context window: two Claude Code agents at 11% and 18%">
+<img src="herdr-app/preview.png" width="400" alt="The Herdr app's Context panel: five Claude Code and Codex agents, fullest first, from 72% in red down to 6%">
 
 As Herdr asks of shared mods, the mod is only the panel: where it goes in your
 window is up to you. There are three ways to place it.
