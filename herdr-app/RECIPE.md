@@ -1,7 +1,7 @@
 # Context Monitor
 
-A small panel under your Agents list that shows how full each Claude Code or
-Codex agent's context window is, one line per agent, fullest first and red above
+A small panel under your Agents list that shows how full each Claude Code, Codex
+or Antigravity agent's context window is, one line per agent, fullest first and red above
 50%. Hover a line for what's left and the tokens behind it; click it to jump to
 that agent. It can also float as a small window instead.
 
@@ -26,8 +26,8 @@ Dock the panel under the Agents list in your own Herdr app layout (see
     `· <title>` in `dim`, filling the rest and cut with `…`. The title drops a
     leading status glyph or spinner and Codex's `[ ! ] ` / `[ . ] ` mark;
   - on the right, `⛁ 34%` at 12px in `dim`; above 50%, in `ansi1` and bold.
-- **No readings yet**: one line at 12px in `dim`, "Claude Code and Codex agents
-  on this computer show here after their first answer." If `monitor.py` fails,
+- **No readings yet**: one line at 12px in `dim`, "Claude Code, Codex and
+  Antigravity agents on this computer show here after their first answer." If `monitor.py` fails,
   its last error line in `ansi1` takes its place.
 - **No Python**: when `python3` can't start, or is macOS's stand-in that asks to
   install the developer tools, the line reads "Python 3 is needed to read context
@@ -85,13 +85,19 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   fingerprint in `localStorage`.
 - `monitor.py` prints a snapshot of readings as JSON and exits. It reads
   terminals from herdr-core (`hc ls --json`, then
-  `hc get <t> --json` for each `claude-code` or `codex` terminal: its foreground
+  `hc get <t> --json` for each `claude-code`, `codex` or `antigravity` terminal: its foreground
   process's pid and folder, and its title), then finds each session:
   - Claude Code: `~/.claude/sessions/<pid>.json` names the session; its
     transcript is `~/.claude/projects/*/<session>.jsonl`.
   - Codex: the one rollout the process has open (`lsof -p <pid>`). If a shared
     daemon holds several, the monitor matches by title and working directory
     using `~/.codex/session_index.jsonl` and each rollout's first line.
+  - Antigravity: the conversation whose `~/.gemini/*/conversations/<id>.db` the
+    process has open (`lsof -p <pid>`; with several, the one in
+    `~/.gemini/*/cache/last_conversations.json` for its folder). Its transcript
+    is `~/.gemini/*/brain/<id>/.system_generated/logs/transcript.jsonl`; use is
+    each model turn's `input_tokens + cache_read_tokens`. The window is a
+    configured one, else 1M for `gemini*` models, else 200k (1M past 200k).
   - Claude's window comes from `/context`, then `context_windows` in the mod's
     `config.json`, then 1M past 200k, else 200k. Codex's comes from
     `model_context_window` in its transcript or a configured window.
@@ -135,7 +141,7 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   installed under another name.
 - `herdr-app check` writes `gpui-kit.d.ts` and `jsconfig.json` into the folder
   it checks; they aren't part of the mod.
-- Only Claude Code and Codex agents on this computer get readings.
+- Only Claude Code, Codex and Antigravity agents on this computer get readings.
 - A Claude session that hasn't answered yet has no transcript, so no line.
 - Without `/context` output or a configured window, Claude counts against 200k
   until a request passes 200k. For a 1M model, add to `config.json` in the mod's

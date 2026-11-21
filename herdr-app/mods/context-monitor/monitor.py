@@ -13,13 +13,17 @@ HC_BIN = shutil.which("hc") or os.path.expanduser("~/.local/bin/hc")
 # How far each transcript has been read is cached between polls.
 APP_STATE = Path.home() / ".cache/herdr-context-monitor/app-state.json"
 # herdr-core's name for each agent (`hc ls`), as this monitor names it.
-APP_AGENTS = {"claude-code": "claude", "claude": "claude", "codex": "codex"}
+APP_AGENTS = {"claude-code": "claude", "claude": "claude", "codex": "codex",
+              "antigravity": "antigravity", "agy": "antigravity"}
 # A Codex rollout file, named after its session id.
 ROLLOUT = re.compile(r"/rollout-[^/]*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$")
+# An Antigravity conversation's database, named after its conversation id.
+AGY_CONVERSATION = re.compile(r"/conversations/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.db$")
 
 # Context window sizes (tokens) used when a transcript does not state its own.
 CLAUDE_STANDARD_WINDOW = 200_000
 CLAUDE_LONG_WINDOW = 1_000_000    # a request past 200k can only have run in the 1M window
+GEMINI_WINDOW = 1_000_000         # Antigravity's transcripts never state a window; Gemini's is 1M
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # The summary line Claude Code's /context prints, e.g. "107.9k/1m tokens (11%)"
@@ -267,6 +271,74 @@ def get_codex_context(session_id, cwd, title, may_guess, claimed, windows):
     return reading(state["tokens"], state["window"] or configured_window(windows, state["model"]))
 
 
+def parse_antigravity(state, entry):
+    tokens = entry.get("input_tokens")
+    if not isinstance(tokens, int) or isinstance(tokens, bool):
+        return
+    # a conversation can alternate models over one shared context: the window and peak carry across them
+    if entry.get("model"):
+        state["model"] = entry["model"]
+    tokens += entry.get("cache_read_tokens") or 0
+    if tokens > 0:
+        state["tokens"] = tokens
+        state["peak"] = max(state["peak"], tokens)
+
+
+def antigravity_last_conversations(cwd):
+    """The conversations Antigravity last ran in this folder, from every ~/.gemini/*/cache/last_conversations.json."""
+    ids = set()
+    if not cwd:
+        return ids
+    for index in sorted((Path.home() / ".gemini").glob("*/cache/last_conversations.json")):
+        try:
+            with open(index, "r", encoding="utf-8") as f:
+                conversation = json.load(f).get(cwd)
+        except Exception:
+            continue
+        if isinstance(conversation, str):
+            ids.add(conversation)
+    return ids
+
+
+def antigravity_transcript_path(session_id):
+    for candidate in sorted((Path.home() / ".gemini").glob(f"*/brain/{session_id}/.system_generated/logs/transcript.jsonl")):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def find_antigravity_transcript(session_id, cwd, may_guess, claimed):
+    if session_id:
+        cached = _paths.get(session_id)
+        if cached and cached.exists():
+            return cached
+        path = antigravity_transcript_path(session_id)
+        if path is not None:
+            _paths[session_id] = path
+        return path
+    # Without a session id, only the conversation last run in this folder is a safe guess for its one pane
+    if may_guess and cwd:
+        found = [p for p in (antigravity_transcript_path(i) for i in antigravity_last_conversations(cwd) - claimed) if p]
+        if len(found) == 1:
+            return found[0]
+    return None
+
+
+def get_antigravity_context(session_id, cwd, may_guess, claimed, windows):
+    """Inspects Antigravity conversation transcripts."""
+    path = find_antigravity_transcript(session_id, cwd, may_guess, claimed)
+    if path is None:
+        return None
+    state = read_new_entries(path, parse_antigravity, lambda: {"tokens": None, "peak": 0, "model": None})
+    model = state["model"] or ""
+    window = (
+        configured_window(windows, model)
+        or (GEMINI_WINDOW if model.startswith("gemini") else None)
+        or (CLAUDE_LONG_WINDOW if state["peak"] > CLAUDE_STANDARD_WINDOW else CLAUDE_STANDARD_WINDOW)
+    )
+    return reading(state["tokens"], window)
+
+
 def run_json(args):
     try:
         res = subprocess.run(args, capture_output=True, text=True, timeout=10)
@@ -314,12 +386,31 @@ def codex_session_id(pid):
     return ids.pop() if len(ids) == 1 else None
 
 
+def antigravity_session_id(pid, cwd):
+    """The conversation whose database this Antigravity process has open; with several, the one last run in its folder."""
+    try:
+        res = subprocess.run(["lsof", "-a", "-p", str(int(pid)), "-Fn"], capture_output=True, text=True, timeout=5)
+    except Exception:
+        return None
+    ids = {m.group(1) for line in res.stdout.splitlines() if line.startswith("n") and (m := AGY_CONVERSATION.search(line))}
+    if len(ids) > 1:
+        ids &= antigravity_last_conversations(cwd)
+    return ids.pop() if len(ids) == 1 else None
+
+
 def app_readings(windows):
     """Readings for the Herdr app's agent terminals, by terminal address; unknown ones are left out."""
     terminals = get_app_terminals()
     for t in terminals:
-        find_session = claude_session_id if t["agent"] == "claude" else codex_session_id
-        t["session"] = find_session(t["pid"]) if t["pid"] else None
+        t["session"] = None
+        if not t["pid"]:
+            continue
+        if t["agent"] == "claude":
+            t["session"] = claude_session_id(t["pid"])
+        elif t["agent"] == "codex":
+            t["session"] = codex_session_id(t["pid"])
+        else:
+            t["session"] = antigravity_session_id(t["pid"], t["cwd"])
     claimed = {t["session"] for t in terminals if t["session"]}
     per_folder = Counter((t["agent"], t["cwd"]) for t in terminals)
     readings = {}
@@ -328,8 +419,10 @@ def app_readings(windows):
         try:
             if t["agent"] == "claude":
                 current = get_claude_context(t["session"], t["cwd"], may_guess, claimed, windows)
-            else:
+            elif t["agent"] == "codex":
                 current = get_codex_context(t["session"], t["cwd"], t["title"], may_guess, claimed, windows)
+            else:
+                current = get_antigravity_context(t["session"], t["cwd"], may_guess, claimed, windows)
         except Exception:
             current = None
         if current is not None:

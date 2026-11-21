@@ -3,7 +3,7 @@
 [![CI](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/EMRahman/herdr-context-monitor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-See how full each Claude Code and Codex agent’s context window is in the
+See how full each Claude Code, Codex and Antigravity agent’s context window is in the
 [Herdr desktop app](https://herdr.dev). Context Monitor adds a panel under the
 Agents list or opens as a floating window. The fullest sessions appear first,
 and readings above 50% turn bold red. Hover for token counts or click a row to
@@ -79,8 +79,10 @@ and remove the context monitor’s `$ctx_*` entries from `[ui.sidebar.agents]` i
 ## Context window sizes
 
 Usage is a share of the model's context window. Codex records its window in
-the transcript. The monitor checks the following sources for Claude Code in
-order.
+the transcript. Antigravity's transcripts don't, so a configured window comes
+first, then 1M for `gemini*` models, then the Claude Code rule below from step 3
+(its model ids, such as `claude-opus-5-5-high`, also match a `claude-opus-5-5`
+key). The monitor checks the following sources for Claude Code in order.
 
 1. the window from the session's most recent `/context` output, such as
    `107.9k/1m tokens (11%)`
@@ -106,9 +108,11 @@ on the next poll.
 
 ## How it works
 
-Every five seconds the mod reads new entries from local Claude Code and Codex
-transcripts. It uses the agent’s session ID when available. Otherwise it searches
-by working directory when that folder has a single terminal for the agent. A
+Every five seconds the mod reads new entries from local Claude Code, Codex and
+Antigravity transcripts. It uses the agent’s session ID when available (for
+Antigravity, the conversation whose database the process has open). Otherwise it
+searches by working directory when that folder has a single terminal for the
+agent (for Antigravity, the conversation last run there). A
 Codex title match must also match the terminal’s working directory. Remote agents
 and sessions without a usable reading are omitted.
 
