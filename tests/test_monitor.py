@@ -262,6 +262,80 @@ class CodexTests(MonitorTest):
             self.assertEqual(opened, [])
 
 
+def agy_turn(tokens, cache=0, model="gemini-4-neon-xhigh"):
+    return {"type": "PLANNER_RESPONSE", "source": "MODEL", "model": model,
+            "input_tokens": tokens, "cache_read_tokens": cache}
+
+
+UUID_A = "b10f6ac2-eedb-41af-b3f6-3e01d11a45ec"
+UUID_B = "cec7a6b0-3bb8-4aab-809a-c405449c9350"
+
+
+class AntigravityTests(MonitorTest):
+    def transcript(self, uuid, entries):
+        return self.write(f".gemini/antigravity-cli/brain/{uuid}/.system_generated/logs/transcript.jsonl", entries)
+
+    def last_conversations(self, mapping):
+        self.write(".gemini/antigravity-cli/cache/last_conversations.json", [])
+        (self.home / ".gemini/antigravity-cli/cache/last_conversations.json").write_text(json.dumps(mapping))
+
+    def context(self, session=UUID_A, cwd="/work", may_guess=True, claimed=(), windows=None):
+        return self.m.get_antigravity_context(session, cwd, may_guess, set(claimed), windows or {})
+
+    def test_use_is_input_plus_cache_of_the_latest_model_turn(self):
+        self.transcript(UUID_A, [
+            {"type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "hi"},
+            agy_turn(16_000, 0), agy_turn(28_000, 132_000),
+            {"type": "GENERIC", "source": "MODEL", "content": "output"},
+        ])
+        self.assertEqual(self.context(), {"pct": 16, "used": 160_000, "window": 1_000_000})
+
+    def test_window_by_model(self):
+        self.transcript(UUID_A, [agy_turn(50_000, model="claude-opus-5-5-high")])
+        self.assertEqual(self.context()["window"], 200_000)
+        self.assertEqual(self.context(windows={"claude-opus-5-5": 1_000_000})["window"], 1_000_000)
+        self.transcript(UUID_B, [agy_turn(50_000, model="gemini-pro-orchestrator-g1-pro")])
+        self.assertEqual(self.context(UUID_B)["window"], 1_000_000)
+        self.assertEqual(self.context(UUID_B, windows={"gemini": 2_000_000})["window"], 2_000_000)
+
+    def test_a_peak_past_200k_implies_1m_even_after_a_model_switch(self):
+        path = self.transcript(UUID_A, [agy_turn(250_000, model="claude-opus-5-5-high")])
+        self.context()
+        self.append(path, [agy_turn(10_000, 240_000, model="claude-sonnet-5")])
+        self.assertEqual(self.context(), {"pct": 25, "used": 250_000, "window": 1_000_000})
+
+    def test_no_model_turn_means_no_reading(self):
+        self.transcript(UUID_A, [{"type": "USER_INPUT", "content": "hi"}])
+        self.assertIsNone(self.context())
+
+    def test_session_is_the_one_conversation_the_process_has_open(self):
+        def lsof(*ids):
+            lines = [f"n/h/.gemini/antigravity-cli/conversations/{i}.db{s}" for i in ids for s in ("", "-wal", "-shm")]
+            lines += [f"n/h/.gemini/antigravity-cli/brain/{i}" for i in ids]
+            return mock.Mock(stdout="p1\n" + "\n".join(lines) + "\n")
+        with mock.patch.object(self.m.subprocess, "run", return_value=lsof(UUID_A)):
+            self.assertEqual(self.m.antigravity_session_id(1, "/work"), UUID_A)
+        # several conversations open: the one last run in the folder, if there is exactly one
+        with mock.patch.object(self.m.subprocess, "run", return_value=lsof(UUID_A, UUID_B)):
+            self.assertIsNone(self.m.antigravity_session_id(1, "/work"))
+            self.last_conversations({"/work": UUID_B})
+            self.assertEqual(self.m.antigravity_session_id(1, "/work"), UUID_B)
+            self.assertIsNone(self.m.antigravity_session_id(1, "/elsewhere"))
+        with mock.patch.object(self.m.subprocess, "run", side_effect=OSError):
+            self.assertIsNone(self.m.antigravity_session_id(1, "/work"))
+
+    def test_guessing_uses_the_folders_last_conversation_for_a_single_pane(self):
+        self.transcript(UUID_A, [agy_turn(100_000)])
+        self.last_conversations({"/work": UUID_A})
+        self.assertEqual(self.context(session=None)["pct"], 10)
+        self.assertIsNone(self.context(session=None, may_guess=False))
+        self.assertIsNone(self.context(session=None, claimed=[UUID_A]))
+        self.assertIsNone(self.context(session=None, cwd="/elsewhere"))
+
+    def test_a_conversation_without_a_transcript_has_no_reading(self):
+        self.assertIsNone(self.context())
+
+
 class DesktopMonitorTests(MonitorTest):
     """One-shot readings for the desktop mod, by herdr-core terminal address."""
 
@@ -302,6 +376,25 @@ class DesktopMonitorTests(MonitorTest):
         self.assertEqual(module.get_app_terminals(),
                          [{"address": "t1", "agent": "claude", "pid": 101, "cwd": "/work", "title": "fix login"}])
         self.assertEqual(calls, [["ls", "--json"], ["get", "t1", "--json"]])
+
+    def test_antigravity_terminals_are_listed_with_the_agents_own_folder(self):
+        listing = {"terminals": [{"address": "t1", "agent": "antigravity", "state": "live", "cwd": "/home"}]}
+        detail = {"cwd": "/home", "title": "", "foreground": {"pid": 7, "cwd": "/work"}}
+        spec = importlib.util.spec_from_file_location("monitor", MONITOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.run_json = lambda args: listing if args[1] == "ls" else detail
+        self.assertEqual(module.get_app_terminals(),
+                         [{"address": "t1", "agent": "antigravity", "pid": 7, "cwd": "/work", "title": ""}])
+
+    def test_antigravity_is_read_next_to_claude(self):
+        self.write(f".gemini/antigravity-cli/brain/{UUID_A}/.system_generated/logs/transcript.jsonl", [agy_turn(300_000)])
+        self.terminals.append({"address": "t2", "agent": "antigravity", "pid": 202, "cwd": "/agy", "title": ""})
+        lsof = mock.Mock(stdout=f"p202\nn/h/.gemini/antigravity-cli/conversations/{UUID_A}.db\n")
+        with mock.patch.object(self.m.subprocess, "run", return_value=lsof):
+            readings = self.poll()
+        self.assertEqual(readings, {"t1": {"pct": 25, "used": 50_000, "window": 200_000},
+                                    "t2": {"pct": 30, "used": 300_000, "window": 1_000_000}})
 
     def test_claude_session_comes_from_its_pid_file(self):
         self.assertEqual(self.m.claude_session_id(101), "s1")

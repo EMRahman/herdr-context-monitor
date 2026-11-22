@@ -1,6 +1,6 @@
 // Context Monitor: how full each agent's context window is, one line per agent.
 // The readings come from monitor.py beside this file, which reads the
-// transcripts of Claude Code and Codex on this computer.
+// transcripts of Claude Code, Codex and Antigravity on this computer.
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -177,7 +177,7 @@ export default class ContextMonitor extends View {
     const shown = agents()
       .filter((a) => local(a) && this.readings[a.address])
       .sort((a, b) => this.readings[b.address].pct - this.readings[a.address].pct);
-    const note = this.error ?? "Claude Code and Codex agents on this computer show here after their first answer.";
+    const note = this.error ?? "Claude Code, Codex and Antigravity agents on this computer show here after their first answer.";
     const rows = shown.map((a) => this.row(t, a, this.readings[a.address], narrow));
     const close = div()
       .id("ctx-close")
