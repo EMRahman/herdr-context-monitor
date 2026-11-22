@@ -131,7 +131,7 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   layout, it puts the previous file back. `--status` and `--undock` (back to
   `main`; removes an untouched `main-context`).
 - Programs the mod runs: `python3` (3.9+, standard library only), `hc`,
-  `lsof`. It reads files outside its folder (`~/.claude`, `~/.codex`,
+  `lsof`, `ps`. It reads files outside its folder (`~/.claude`, `~/.codex`,
   `layouts/main.json`) and writes one cache file in
   `~/.cache/herdr-context-monitor/`. It never writes a layout. No network.
 

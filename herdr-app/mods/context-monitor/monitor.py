@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -149,7 +150,7 @@ def claude_project_dir(cwd):
     return Path.home() / ".claude/projects" / re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
 
 
-def find_claude_transcript(session_id, cwd, may_guess, claimed):
+def find_claude_transcript(session_id, cwd, may_guess, claimed, started_at=None):
     if session_id:
         cached = _paths.get(session_id)
         if cached and cached.exists():
@@ -165,14 +166,17 @@ def find_claude_transcript(session_id, cwd, may_guess, claimed):
     if may_guess and cwd:
         project_dir = claude_project_dir(cwd)
         if project_dir.is_dir():
-            unclaimed = [p for p in project_dir.glob("*.jsonl") if p.stem not in claimed]
+            unclaimed = [
+                p for p in project_dir.glob("*.jsonl")
+                if p.stem not in claimed and (started_at is None or p.stat().st_mtime >= started_at)
+            ]
             return max(unclaimed, key=lambda p: p.stat().st_mtime, default=None)
     return None
 
 
-def get_claude_context(session_id, cwd, may_guess, claimed, windows):
+def get_claude_context(session_id, cwd, may_guess, claimed, windows, started_at=None):
     """Inspects Claude Code project session transcripts."""
-    path = find_claude_transcript(session_id, cwd, may_guess, claimed)
+    path = find_claude_transcript(session_id, cwd, may_guess, claimed, started_at)
     if path is None:
         return None
     state = read_new_entries(path, parse_claude, lambda: {"tokens": None, "peak": 0, "model": None, "window": None})
@@ -216,7 +220,7 @@ def codex_session_meta(path):
     return meta
 
 
-def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
+def find_codex_transcript(session_id, cwd, title, may_guess, claimed, started_at=None):
     codex_dir = Path.home() / ".codex"
     sessions_dir = codex_dir / "sessions"
     if not sessions_dir.exists():
@@ -232,7 +236,10 @@ def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
     if not may_guess:
         return None
     # Without a session id, guess only for the one Codex pane in this folder, from sessions no other pane claims
-    rollouts = sorted(sessions_dir.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    rollouts = [
+        p for p in sorted(sessions_dir.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if started_at is None or p.stat().st_mtime >= started_at
+    ]
     if title:
         index_file = codex_dir / "session_index.jsonl"
         if index_file.exists():
@@ -261,9 +268,9 @@ def find_codex_transcript(session_id, cwd, title, may_guess, claimed):
     return None
 
 
-def get_codex_context(session_id, cwd, title, may_guess, claimed, windows):
+def get_codex_context(session_id, cwd, title, may_guess, claimed, windows, started_at=None):
     """Inspects OpenAI Codex session usage."""
-    path = find_codex_transcript(session_id, cwd, title, may_guess, claimed)
+    path = find_codex_transcript(session_id, cwd, title, may_guess, claimed, started_at)
     if path is None:
         return None
     state = read_new_entries(path, parse_codex, lambda: {"tokens": None, "model": None, "window": None})
@@ -307,7 +314,7 @@ def antigravity_transcript_path(session_id):
     return None
 
 
-def find_antigravity_transcript(session_id, cwd, may_guess, claimed):
+def find_antigravity_transcript(session_id, cwd, may_guess, claimed, started_at=None):
     if session_id:
         cached = _paths.get(session_id)
         if cached and cached.exists():
@@ -318,15 +325,18 @@ def find_antigravity_transcript(session_id, cwd, may_guess, claimed):
         return path
     # Without a session id, only the conversation last run in this folder is a safe guess for its one pane
     if may_guess and cwd:
-        found = [p for p in (antigravity_transcript_path(i) for i in antigravity_last_conversations(cwd) - claimed) if p]
+        found = [
+            p for p in (antigravity_transcript_path(i) for i in antigravity_last_conversations(cwd) - claimed)
+            if p and (started_at is None or p.stat().st_mtime >= started_at)
+        ]
         if len(found) == 1:
             return found[0]
     return None
 
 
-def get_antigravity_context(session_id, cwd, may_guess, claimed, windows):
+def get_antigravity_context(session_id, cwd, may_guess, claimed, windows, started_at=None):
     """Inspects Antigravity conversation transcripts."""
-    path = find_antigravity_transcript(session_id, cwd, may_guess, claimed)
+    path = find_antigravity_transcript(session_id, cwd, may_guess, claimed, started_at)
     if path is None:
         return None
     state = read_new_entries(path, parse_antigravity, lambda: {"tokens": None, "peak": 0, "model": None})
@@ -398,6 +408,20 @@ def antigravity_session_id(pid, cwd):
     return ids.pop() if len(ids) == 1 else None
 
 
+def process_start_time(pid):
+    """When this process started (Unix seconds), or None if unknown."""
+    try:
+        env = {**os.environ, "LC_ALL": "C"}
+        res = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))],
+                             capture_output=True, text=True, timeout=5, env=env)
+        text = res.stdout.strip()
+        if res.returncode != 0 or not text:
+            return None
+        return time.mktime(time.strptime(text, "%a %b %d %H:%M:%S %Y"))
+    except Exception:
+        return None
+
+
 def app_readings(windows):
     """Readings for the Herdr app's agent terminals, by terminal address; unknown ones are left out."""
     terminals = get_app_terminals()
@@ -416,13 +440,14 @@ def app_readings(windows):
     readings = {}
     for t in terminals:
         may_guess = per_folder[(t["agent"], t["cwd"])] == 1
+        started_at = process_start_time(t["pid"]) if (not t["session"] and may_guess and t["pid"]) else None
         try:
             if t["agent"] == "claude":
-                current = get_claude_context(t["session"], t["cwd"], may_guess, claimed, windows)
+                current = get_claude_context(t["session"], t["cwd"], may_guess, claimed, windows, started_at)
             elif t["agent"] == "codex":
-                current = get_codex_context(t["session"], t["cwd"], t["title"], may_guess, claimed, windows)
+                current = get_codex_context(t["session"], t["cwd"], t["title"], may_guess, claimed, windows, started_at)
             else:
-                current = get_antigravity_context(t["session"], t["cwd"], may_guess, claimed, windows)
+                current = get_antigravity_context(t["session"], t["cwd"], may_guess, claimed, windows, started_at)
         except Exception:
             current = None
         if current is not None:

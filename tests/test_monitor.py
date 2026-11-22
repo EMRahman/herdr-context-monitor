@@ -181,10 +181,13 @@ class ClaudeTests(MonitorTest):
     def test_guessing_skips_claimed_sessions_and_needs_a_single_pane(self):
         older = self.write(".claude/projects/-work/a.jsonl", [assistant(1)])
         newer = self.write(".claude/projects/-work/b.jsonl", [assistant(1)])
-        os.utime(older, (time.time() - 60, time.time() - 60))
+        now = time.time()
+        os.utime(older, (now - 60, now - 60))
         self.assertEqual(self.m.find_claude_transcript(None, "/work", True, set()), newer)
         self.assertEqual(self.m.find_claude_transcript(None, "/work", True, {"b"}), older)
         self.assertIsNone(self.m.find_claude_transcript(None, "/work", False, set()))
+        self.assertIsNone(self.m.find_claude_transcript(None, "/work", True, set(), started_at=now + 10))
+        self.assertEqual(self.m.find_claude_transcript(None, "/work", True, set(), started_at=now - 10), newer)
 
 
 class CodexTests(MonitorTest):
@@ -224,6 +227,8 @@ class CodexTests(MonitorTest):
         self.assertEqual(self.m.find_codex_transcript(None, "/Code/DeuceMate3/DeuceMate", "DeuceMate3", True, set()), new)
         self.assertEqual(self.m.get_codex_context(None, "/Code/DeuceMate3/DeuceMate", "DeuceMate3", True, set(), {})["pct"], 10)
         self.assertIsNone(self.m.find_codex_transcript(None, "/Code/DeuceMate4", "DeuceMate3", True, set()))
+        self.assertIsNone(self.m.find_codex_transcript(None, "/Code/DeuceMate3/DeuceMate", "DeuceMate3", True, set(),
+                                                       started_at=time.time() + 10))
 
     def test_ambiguous_title_matches_in_same_folder_are_not_guessed(self):
         self.write(".codex/session_index.jsonl", [
@@ -325,12 +330,16 @@ class AntigravityTests(MonitorTest):
             self.assertIsNone(self.m.antigravity_session_id(1, "/work"))
 
     def test_guessing_uses_the_folders_last_conversation_for_a_single_pane(self):
-        self.transcript(UUID_A, [agy_turn(100_000)])
+        path = self.transcript(UUID_A, [agy_turn(100_000)])
         self.last_conversations({"/work": UUID_A})
+        now = time.time()
+        os.utime(path, (now - 30, now - 30))
         self.assertEqual(self.context(session=None)["pct"], 10)
         self.assertIsNone(self.context(session=None, may_guess=False))
         self.assertIsNone(self.context(session=None, claimed=[UUID_A]))
         self.assertIsNone(self.context(session=None, cwd="/elsewhere"))
+        self.assertIsNone(self.m.get_antigravity_context(None, "/work", True, set(), {}, started_at=now))
+        self.assertEqual(self.m.get_antigravity_context(None, "/work", True, set(), {}, started_at=now - 60)["pct"], 10)
 
     def test_a_conversation_without_a_transcript_has_no_reading(self):
         self.assertIsNone(self.context())
@@ -444,6 +453,26 @@ class DesktopMonitorTests(MonitorTest):
         (self.config_dir / "config.json").write_text(json.dumps({"context_windows": {"claude-sonnet": 1_000_000}}))
         readings = self.poll(args=("--app", "--config-dir", str(self.config_dir)))
         self.assertEqual(readings["t1"], {"pct": 5, "used": 50_000, "window": 1_000_000})
+
+    def test_process_start_time_parses_ps_lstart(self):
+        expected = time.mktime(time.strptime("Mon Nov  2 12:12:30 2026", "%a %b %d %H:%M:%S %Y"))
+        with mock.patch.object(self.m.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="Mon Nov  2 12:12:30 2026\n")):
+            self.assertEqual(self.m.process_start_time(123), expected)
+        with mock.patch.object(self.m.subprocess, "run", return_value=mock.Mock(returncode=1, stdout="")):
+            self.assertIsNone(self.m.process_start_time(123))
+        with mock.patch.object(self.m.subprocess, "run", side_effect=OSError):
+            self.assertIsNone(self.m.process_start_time(123))
+
+    def test_new_session_does_not_inherit_a_finished_sessions_reading(self):
+        old = self.write(f".gemini/antigravity-cli/brain/{UUID_A}/.system_generated/logs/transcript.jsonl", [agy_turn(530_000)])
+        self.write(".gemini/antigravity-cli/cache/last_conversations.json", [])
+        (self.home / ".gemini/antigravity-cli/cache/last_conversations.json").write_text(json.dumps({"/agy": UUID_A}))
+        now = time.time()
+        os.utime(old, (now - 30, now - 30))
+        self.terminals = [{"address": "t2", "agent": "antigravity", "pid": 202, "cwd": "/agy", "title": ""}]
+        with mock.patch.object(self.m, "antigravity_session_id", return_value=None), \
+             mock.patch.object(self.m, "process_start_time", return_value=now):
+            self.assertEqual(self.poll(), {})
 
 
 if __name__ == "__main__":

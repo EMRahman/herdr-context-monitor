@@ -250,7 +250,7 @@ export default class ContextMonitor extends View {
       )
       .when(Boolean(overlay), (el) => el.child(v_flex().px(8).children(rows)))
       .when(!overlay, (el) =>
-        el.child(v_flex().id("ctx-list").flex_1().min_h(0).px(narrow ? 0 : 8).overflow_y_scrollbar().children(rows)),
+        el.child(v_flex().id("ctx-list").flex_1().min_h(0).px(narrow ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows)),
       );
   }
 }
