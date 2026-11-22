@@ -78,17 +78,21 @@ and remove the context monitor’s `$ctx_*` entries from `[ui.sidebar.agents]` i
 
 ## Context window sizes
 
-Usage is a share of the model's context window. Codex records its window in
-the transcript. Antigravity's transcripts don't, so a configured window comes
-first, then 1M for `gemini*` models, then the Claude Code rule below from step 3
-(its model ids, such as `claude-opus-5-5-high`, also match a `claude-opus-5-5`
-key). The monitor checks the following sources for Claude Code in order.
+The panel updates usage percentages every five seconds while a local agent is
+present. It checks all three local model catalogs on the first poll and then
+hourly, reusing cached sizes between checks. Catalog lookups use the exact
+model ID.
 
-1. the window from the session's most recent `/context` output, such as
-   `107.9k/1m tokens (11%)`
-2. a window configured for the model (below)
-3. 1M, once a request has gone past 200k tokens
-4. 200k
+| Agent | Window sources, in priority order |
+| --- | --- |
+| Claude Code | The session's `/context` output, a configured override, then the CLI model catalog's `runtime.max_input_tokens`. For Sonnet and Opus 4.6, 1M is opt-in. Without a usable size the monitor assumes 200k, or 1M after a request exceeds 200k. |
+| Codex | The session's `model_context_window`, a configured override, then the effective window from `~/.codex/models_cache.json` (the default window times its effective percentage). A session needs one of these to appear. |
+| Antigravity | A configured override, then the local gateway or CLI custom model list's `maxTokens`. When no local entry supplies a size, Gemini uses the 1M fallback and other models use 200k, or 1M after a request exceeds 200k. |
+
+Claude Code's CLI catalogs are in `~/.claude/cache/model-catalog/*-cc.json`.
+A catalog supplies a model default. For sessions that run with a different cap,
+a configured override applies from the first reading and a later `/context`
+result takes precedence.
 
 This example sets a 1M window for Claude Opus 5.5 in
 `~/.config/herdr-app/mods/context-monitor/config.json`.
@@ -101,10 +105,9 @@ This example sets a 1M window for Claude Opus 5.5 in
 }
 ```
 
-Keys are model id prefixes, and the longest matching prefix wins. The same
-setting supplies a Codex model's window when its transcript omits it. A Codex
-session needs a window from one of those sources to appear. Changes take effect
-on the next poll.
+Override keys are model ID prefixes, and the longest matching prefix wins. For
+example, `claude-opus-5-5` also matches Antigravity's `claude-opus-5-5-high`.
+Changes take effect on the next poll.
 
 ## How it works
 

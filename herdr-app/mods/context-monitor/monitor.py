@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from collections import Counter
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 HC_BIN = shutil.which("hc") or os.path.expanduser("~/.local/bin/hc")
 # How far each transcript has been read is cached between polls.
 APP_STATE = Path.home() / ".cache/herdr-context-monitor/app-state.json"
+CATALOG_REFRESH_SECONDS = 60 * 60
 # herdr-core's name for each agent (`hc ls`), as this monitor names it.
 APP_AGENTS = {"claude-code": "claude", "claude": "claude", "codex": "codex",
               "antigravity": "antigravity", "agy": "antigravity"}
@@ -38,6 +40,96 @@ _touched = set()
 _paths = {}
 # Codex rollout path -> its session_meta, which never changes once written.
 _codex_meta = {}
+# File signatures and extracted limits survive the one-shot Python polls.
+_catalog_files = {}
+_model_windows = {"claude": {}, "codex": {}, "antigravity": {}}
+
+
+def catalog_entries(agent, data):
+    """Extract only model IDs and usable context sizes from a provider's local catalog."""
+    if agent == "claude":
+        rows = data["catalog"]["config"]["models"]
+    elif agent == "codex":
+        rows = data["models"]
+    elif agent == "antigravity-cli":
+        custom = data.get("customModelsConfig", {}).get("customModels", {})
+        rows = [dict(row, modelId=row.get("modelId") or key)
+                for key, row in custom.items() if isinstance(row, dict)]
+    else:
+        rows = data.get("models", {}).get("list")
+        if rows is None:
+            return None  # no local model list at this settings level
+    if not isinstance(rows, list):
+        raise ValueError("expected a model list")
+    windows = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if agent == "claude":
+            model = row.get("id")
+            runtime = row.get("runtime")
+            window = runtime.get("max_input_tokens") if isinstance(runtime, dict) else None
+        elif agent == "codex":
+            model = row.get("slug")
+            window = row.get("context_window")
+            effective = row.get("effective_context_window_percent", 95)
+            if type(window) is not int or type(effective) is not int or not 0 < effective <= 100:
+                continue
+            window = window * effective // 100
+        else:
+            model = row.get("modelId")
+            window = row.get("maxTokens")
+        if isinstance(model, str) and model and type(window) is int and window > 0:
+            windows[model] = window
+    return windows
+
+
+def cached_catalog(agent, path):
+    key = str(path)
+    previous = _catalog_files.get(key, {})
+    try:
+        st = path.stat()
+        signature = [st.st_ino, st.st_size, st.st_mtime_ns]
+        if previous.get("signature") == signature:
+            return previous["windows"]
+        windows = catalog_entries(agent, json.loads(path.read_bytes()))
+        _catalog_files[key] = {"signature": signature, "windows": windows}
+        return windows
+    except FileNotFoundError:
+        _catalog_files.pop(key, None)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        # Keep the last readable sizes until the next catalog check.
+        return previous.get("windows")
+    return None
+
+
+def refresh_model_windows():
+    home = Path.home()
+    claude_dir = home / ".claude/cache/model-catalog"
+    claude_files = sorted(claude_dir.glob("*-cc.json"))
+    # Different Claude accounts may have different limits for the same ID.
+    # Use only limits their catalogs agree on when the account is ambiguous.
+    sizes = {}
+    for path in claude_files:
+        for model, window in (cached_catalog("claude", path) or {}).items():
+            sizes.setdefault(model, set()).add(window)
+    _model_windows["claude"] = {m: next(iter(limits)) for m, limits in sizes.items() if len(limits) == 1}
+    for key in list(_catalog_files):
+        if Path(key).parent == claude_dir and Path(key) not in claude_files:
+            del _catalog_files[key]
+
+    _model_windows["codex"] = cached_catalog("codex", home / ".codex/models_cache.json") or {}
+    custom = cached_catalog("antigravity-cli", home / ".gemini/antigravity-cli/settings.json") or {}
+    admin = (Path("/Library/Application Support/Antigravity") if sys.platform == "darwin"
+             else Path("/etc/antigravity")) / "admin_settings.json"
+    # A managed list replaces the user list as a whole, including an empty list.
+    for path in (admin, home / ".gemini/config/config.json", home / ".antigravity/settings.json"):
+        windows = cached_catalog("antigravity", path)
+        if windows is not None:
+            _model_windows["antigravity"] = {**custom, **windows}
+            break
+    else:
+        _model_windows["antigravity"] = custom
 
 
 def load_context_windows(config_dir):
@@ -120,11 +212,13 @@ def parse_claude(state, entry):
         message = entry.get("message") or {}
         model = message.get("model")
         if model and not model.startswith("<"):
-            if state["model"] and model != state["model"]:
+            long_variant = str(entry.get("requestedModel", "")).endswith("[1m]")
+            if state["model"] and (model != state["model"] or long_variant != state.get("long_variant", False)):
                 # the window /context reported, and the peak that implies 1M, belong to the model they ran under
                 state["window"] = None
                 state["peak"] = 0
             state["model"] = model
+            state["long_variant"] = long_variant
         usage = message.get("usage")
         if usage:
             tokens = (
@@ -180,9 +274,17 @@ def get_claude_context(session_id, cwd, may_guess, claimed, windows, started_at=
     if path is None:
         return None
     state = read_new_entries(path, parse_claude, lambda: {"tokens": None, "peak": 0, "model": None, "window": None})
+    model = state["model"]
+    catalog_window = _model_windows["claude"].get(model)
+    # For 4.6 the catalog advertises the opt-in maximum even on a standard session.
+    if state.get("long_variant"):
+        catalog_window = CLAUDE_LONG_WINDOW
+    elif model in ("claude-opus-4-6", "claude-sonnet-4-6") or (catalog_window and catalog_window < state["peak"]):
+        catalog_window = None
     window = (
         state["window"]
-        or configured_window(windows, state["model"])
+        or configured_window(windows, model)
+        or catalog_window
         or (CLAUDE_LONG_WINDOW if state["peak"] > CLAUDE_STANDARD_WINDOW else CLAUDE_STANDARD_WINDOW)
     )
     return reading(state["tokens"], window)
@@ -274,8 +376,8 @@ def get_codex_context(session_id, cwd, title, may_guess, claimed, windows, start
     if path is None:
         return None
     state = read_new_entries(path, parse_codex, lambda: {"tokens": None, "model": None, "window": None})
-    # no stated or configured window means no reading, rather than one against a guess
-    return reading(state["tokens"], state["window"] or configured_window(windows, state["model"]))
+    window = state["window"] or configured_window(windows, state["model"]) or _model_windows["codex"].get(state["model"])
+    return reading(state["tokens"], window)
 
 
 def parse_antigravity(state, entry):
@@ -343,6 +445,7 @@ def get_antigravity_context(session_id, cwd, may_guess, claimed, windows, starte
     model = state["model"] or ""
     window = (
         configured_window(windows, model)
+        or _model_windows["antigravity"].get(model)
         or (GEMINI_WINDOW if model.startswith("gemini") else None)
         or (CLAUDE_LONG_WINDOW if state["peak"] > CLAUDE_STANDARD_WINDOW else CLAUDE_STANDARD_WINDOW)
     )
@@ -459,7 +562,7 @@ def app_readings(windows):
 
 
 def load_app_state(path):
-    """Picks up where the last poll stopped reading, so each poll reads only what transcripts gained."""
+    """Restore transcript offsets and return the time of the last usable catalog check."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -472,14 +575,26 @@ def load_app_state(path):
     _tails.update(tails)
     _paths.update(paths)
     _codex_meta.update(codex_meta)
+    if isinstance(data.get("catalog_files"), dict):
+        _catalog_files.update({k: v for k, v in data["catalog_files"].items() if isinstance(v, dict)})
+    windows = data.get("model_windows")
+    checked_at = data.get("catalog_checked_at")
+    if isinstance(windows, dict) and type(checked_at) in (int, float):
+        if all(isinstance(windows.get(agent), dict) and
+               all(type(n) is int and n > 0 for n in windows[agent].values()) for agent in _model_windows):
+            _model_windows.update({agent: windows[agent] for agent in _model_windows})
+            return checked_at
 
 
-def save_app_state(path):
+def save_app_state(path, catalog_checked_at):
     data = {
         "tails": {str(p): {"inode": t["inode"], "offset": t["offset"], "rest": t["rest"].decode("latin-1"),
                            "state": t["state"]} for p, t in _tails.items()},
         "paths": {k: str(v) for k, v in _paths.items()},
         "codex_meta": {str(p): m for p, m in _codex_meta.items()},
+        "catalog_files": _catalog_files,
+        "model_windows": _model_windows,
+        "catalog_checked_at": catalog_checked_at,
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -499,9 +614,13 @@ def main(argv=None):
     parser.add_argument("--config-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--state", type=Path, default=APP_STATE)
     args = parser.parse_args(argv)
-    load_app_state(args.state)
+    checked_at = load_app_state(args.state)
+    now = time.time()
+    if checked_at is None or not 0 <= now - checked_at < CATALOG_REFRESH_SECONDS:
+        refresh_model_windows()
+        checked_at = now
     readings = app_readings(load_context_windows(args.config_dir))
-    save_app_state(args.state)
+    save_app_state(args.state, checked_at)
     print(json.dumps({"readings": readings}))
 
 

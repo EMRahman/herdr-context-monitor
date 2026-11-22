@@ -96,11 +96,15 @@ Dock the panel under the Agents list in your own Herdr app layout (see
     process has open (`lsof -p <pid>`; with several, the one in
     `~/.gemini/*/cache/last_conversations.json` for its folder). Its transcript
     is `~/.gemini/*/brain/<id>/.system_generated/logs/transcript.jsonl`; use is
-    each model turn's `input_tokens + cache_read_tokens`. The window is a
-    configured one, else 1M for `gemini*` models, else 200k (1M past 200k).
+    each model turn's `input_tokens + cache_read_tokens`. The window comes from
+    a configured override or its local gateway or CLI custom model list.
+    The fallback is 1M for `gemini*` models, else 200k (1M past 200k).
   - Claude's window comes from `/context`, then `context_windows` in the mod's
-    `config.json`, then 1M past 200k, else 200k. Codex's comes from
-    `model_context_window` in its transcript or a configured window.
+    `config.json`, then the local Claude CLI model catalog, then 1M past
+    200k, else 200k. Codex uses `model_context_window` in its transcript,
+    a configured window or its local catalog's effective context window.
+    The first poll checks all three agents' local catalogs. Later polls reuse
+    the cached sizes for an hour between checks.
   - How far each transcript was read is kept in
     `~/.cache/herdr-context-monitor/app-state.json`, so each run reads only what
     was appended.
@@ -143,9 +147,9 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   it checks; they aren't part of the mod.
 - Only Claude Code, Codex and Antigravity agents on this computer get readings.
 - A Claude session that hasn't answered yet has no transcript, so no line.
-- Without `/context` output or a configured window, Claude counts against 200k
-  until a request passes 200k. For a 1M model, add to `config.json` in the mod's
-  folder:
+- If Claude's local catalog has no usable window for a model, the monitor falls
+  back to 200k until a request passes 200k. To supply a known 1M window from
+  the first response, add the override to the mod's `config.json`:
   `{ "context_windows": { "claude-opus-5-5": 1000000 } }`.
 - Don't animate or redraw on a timer: the poll only calls `cx.notify()` when
   something shown changed.
