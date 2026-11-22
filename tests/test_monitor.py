@@ -369,6 +369,87 @@ class DesktopMonitorTests(MonitorTest):
         module.get_app_terminals = self.m.get_app_terminals
         return module
 
+    @mock.patch("time.time", return_value=1_800_000_000)
+    def test_first_reading_and_refresh_across_polls(self, clock):
+        model = "claude-sonnet-5-5"
+        self.transcript.write_text(json.dumps(assistant(79_301, model)) + "\n")
+
+        def catalog(size):
+            return {"catalog": {"config": {"models": [
+                {"id": model, "runtime": {"max_input_tokens": size}},
+                {"id": "unused", "runtime": {"max_input_tokens": 400_000}},
+                {"id": "broken", "runtime": None},
+            ]}}}
+
+        path = self.write(".claude/cache/model-catalog/account-cc.json", [catalog(1_000_000)])
+        self.assertEqual(self.poll()["t1"]["pct"], 8)
+        self.assertEqual(self.m._model_windows["claude"]["unused"], 400_000)
+        self.append(self.transcript, [assistant(190_673, model)])
+        later = self.fresh_module()
+        interval = later.CATALOG_REFRESH_SECONDS
+        clock.return_value += interval - 1
+        with mock.patch.object(later, "refresh_model_windows", side_effect=AssertionError("early catalog scan")):
+            self.assertEqual(self.poll(later)["t1"]["pct"], 19)
+        path.write_text("{")
+        clock.return_value += 1
+        self.assertEqual(self.poll(self.fresh_module())["t1"]["pct"], 19)
+        path.write_text(json.dumps(catalog(500_000)))
+        clock.return_value += interval
+        self.assertEqual(self.poll(self.fresh_module())["t1"]["pct"], 38)
+        self.config_dir.mkdir()
+        (self.config_dir / "config.json").write_text(json.dumps({"context_windows": {model: 200_000}}))
+        config_args = ["--config-dir", str(self.config_dir)]
+        self.assertEqual(self.poll(args=config_args)["t1"]["pct"], 95)
+        self.append(self.transcript, [context_output("190.7k/1m tokens (19%)")])
+        self.assertEqual(self.poll(args=config_args)["t1"]["pct"], 19)
+        path.unlink()
+        clock.return_value += interval
+        self.poll()
+        self.assertEqual(self.m._model_windows["claude"], {})
+
+    def test_opt_in_claude_window_uses_the_selected_variant(self):
+        model = "claude-sonnet-4-6"
+        self.write(".claude/cache/model-catalog/account-cc.json", [
+            {"catalog": {"config": {"models": [{"id": model, "runtime": {"max_input_tokens": 1_000_000}}]}}}
+        ])
+        self.append(self.transcript, [assistant(100_000, model)])
+        self.assertEqual(self.poll()["t1"]["pct"], 50)
+        self.append(self.transcript, [dict(assistant(100_000, model), requestedModel="sonnet[1m]")])
+        self.assertEqual(self.poll()["t1"]["pct"], 10)
+
+    def test_codex_and_antigravity_catalogs_are_scoped_and_refreshed(self):
+        model = "shared-id"
+        self.write(".codex/models_cache.json", [{"models": [
+            {"slug": model, "context_window": 272_000, "max_context_window": 872_000,
+             "effective_context_window_percent": 95},
+            {"slug": "broken", "context_window": True},
+        ]}])
+        self.write(".codex/sessions/rollout-c1.jsonl", [turn_context(model), token_count(25_840)])
+        settings = self.write(".gemini/antigravity-cli/settings.json", [{"customModelsConfig": {"customModels": {
+            model: {"modelId": model, "maxTokens": 400_000, "maxOutputTokens": 8192},
+        }}}])
+        self.write(f".gemini/antigravity-cli/brain/{UUID_A}/.system_generated/logs/transcript.jsonl",
+                   [agy_turn(100_000, model=model)])
+        self.m.refresh_model_windows()
+        def codex():
+            return self.m.get_codex_context("c1", "/work", "", False, set(), {})
+        def antigravity():
+            return self.m.get_antigravity_context(UUID_A, "/work", False, set(), {})
+        self.assertEqual(codex()["pct"], 10)
+        self.assertEqual(antigravity()["pct"], 25)
+        self.assertNotIn("broken", self.m._model_windows["codex"])
+        self.append(self.home / ".codex/sessions/rollout-c1.jsonl", [token_count(25_840, 129_200)])
+        self.assertEqual(codex()["pct"], 20)
+        settings.write_text("{}")
+        gateway = self.write(".antigravity/settings.json", [{"models": {"list": [
+            {"modelId": model, "maxTokens": 500_000}, {"modelId": "no-size"}
+        ]}}])
+        self.m.refresh_model_windows()
+        self.assertEqual(antigravity()["pct"], 20)
+        gateway.unlink()
+        self.m.refresh_model_windows()
+        self.assertEqual(antigravity()["pct"], 50)
+
     def test_terminals_come_from_herdr_core_with_the_agents_own_folder(self):
         listing = {"terminals": [
             {"address": "t1", "agent": "claude-code", "state": "live", "cwd": "/home"},
