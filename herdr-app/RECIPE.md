@@ -1,9 +1,8 @@
 # Context Monitor
 
-A small panel under your Agents list that shows how full each Claude Code, Codex
-or Antigravity agent's context window is, one line per agent, fullest first and red above
-50%. Hover a line for what's left and the tokens behind it; click it to jump to
-that agent. It can also float as a small window instead.
+See which local Claude Code, Codex, or Antigravity sessions are filling up.
+The fullest sessions appear first. Hover for token counts or click to jump to
+the agent. Dock the panel under Agents or open it as a floating window.
 
 ![Context Monitor](preview.png)
 
