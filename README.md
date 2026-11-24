@@ -9,7 +9,7 @@ Agents list or opens as a floating window. The fullest sessions appear first,
 and readings above 50% turn bold red. Hover for token counts or click a row to
 jump to that agent.
 
-<img src="herdr-app/preview.png" width="400" alt="The Herdr desktop app’s Context panel shows five agents, from 72% in red down to 6%">
+![Context Monitor ranks sessions by context used and shows the exact token count for the highlighted session](herdr-app/preview.png)
 
 ## Install
 
