@@ -32,6 +32,8 @@ python3 herdr-app/dock.py
 ```
 
 The helper checks the mod and docks the panel under Agents.
+If Herdr is running, the helper immediately switches to the layout it docks into,
+which is `main-context` by default on a fresh install from a built-in layout.
 
 - **In your own layout, if one is on screen**, it inserts the Context block
   after the Agents list and keeps the rest of the layout intact.
