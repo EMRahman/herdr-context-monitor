@@ -14,10 +14,13 @@ Dock the panel under the Agents list in your own Herdr app layout (see
 - **A window**, 300px wide and as tall as its lines, in Herdr's own window frame
   (theme background, border, rounded corners, shadow). It opens where it was
   last dropped and comes back on the next start until closed.
-- **Header**, 34px, 16px side padding, 8px top: `Context` at 11.5px medium in
+- **Header**, 34px, 16px side padding, 8px top: `Context Usage` at 11.5px medium in
   `dim`; on the right a `×` in `dim` (`hover` behind it, `foreground` text on
   hover) that closes the window.
-- **One line per agent with a reading**, fullest first (highest percentage at
+- **Usage groups** show a label and an agent count. The bold red `>50%` group
+  appears first when it has readings, followed by `≤50%`. Groups start collapsed.
+  Click a group to expand or collapse it.
+- **One line per agent in an expanded group**, fullest first (highest percentage at
   the top; equal ones in `agents()` order: space, tab, pane), 28px tall, radius 8, inside 8px side padding, 9px gaps, 13px text:
   - the agent's program icon, 16px (tinted with `foreground` when the program
     table says `tint`);
@@ -48,13 +51,13 @@ Dock the panel under the Agents list in your own Herdr app layout (see
 - **Hover** a line: a tooltip `Context 66% left · 68k of 200k tokens` (counts as
   `k`, or `M` from a million).
 - **Click** a line: `pane.focus {pane}` for that agent.
-- **Drag** the window anywhere by a press that isn't on `×`.
+- **Drag** the window by its header.
 - Lines appear and go as agents start, end or first answer.
 - **Docked under Agents** (a layout block instead of a window): it fills the
   block with `chrome` behind it and a top `border`, like the Agents list above
   it; its header is 41px (14px top), with no `×`, and its lines scroll. In the
-  sidebar's rail (narrower than 160px) it shows only each line's percentage,
-  centered, without the header.
+  sidebar's rail (narrower than 160px) it shows centered group labels and
+  counts, with only the percentage on each expanded agent row.
 - **When Herdr updates its `main` layout** and the panel was docked by the
   repository's `herdr-app/dock.py` (below), the docked copy notices at start and
   posts one info toast per new `main`: "Herdr updated its main layout",
