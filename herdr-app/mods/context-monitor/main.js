@@ -11,6 +11,7 @@ const NAME = "context-monitor";
 const POLL_MS = 5000;
 // Use above this share is shown in bold red: models get less reliable as their context fills.
 const HIGH = 50;
+const BADGE_SIZE = 28;
 const GROUPS = [
   { id: "low", label: "<25%", range: "Under 25% used" },
   { id: "medium", label: "≤50%", range: "25% to 50% used" },
@@ -139,20 +140,40 @@ export default class ContextMonitor extends View {
 
   pill(t, group, members, rail, empty) {
     const { id, label, range } = group;
-    const high = id === "high" && members.length > 0;
-    const open = this.openGroup === id && members.length > 0;
+    const total = members.length;
+    const digits = String(total);
+    const high = id === "high" && total > 0;
+    const open = this.openGroup === id && total > 0;
     const color = high ? t.ansi1 : t.dim;
-    const summary = `${range} · ${members.length} ${members.length === 1 ? "session" : "sessions"}`;
-    const trigger = (rail ? v_flex() : h_flex())
+    const summary = `${range} · ${total} ${total === 1 ? "session" : "sessions"}`;
+    // The rail divides its width among the three groups with 1px padding and gaps.
+    const size = rail ? Math.min(BADGE_SIZE, Math.max(0, Math.floor((this.width - 4) / GROUPS.length))) : BADGE_SIZE;
+    const countSize = Math.min(Math.max(8, Math.round(size * 0.46)), size / (digits.length * 0.75));
+    const badge = div()
+      .relative()
+      .size(size)
+      .flex_none()
+      .child(svg(`mods/${NAME}/database.svg`).size(size).text_color(color))
+      .child(h_flex()
+        .absolute()
+        .inset_0()
+        .pt(size / 4)
+        .items_center()
+        .justify_center()
+        .text_size(countSize)
+        .line_height(1)
+        .font_bold()
+        .text_color(total && !high ? t.foreground : color)
+        .child(digits));
+    const trigger = h_flex()
       .id(`ctx-pill-${id}`)
-      .h(rail ? 26 : 22)
-      .px(rail ? 0 : 4)
+      .h(30)
       .items_center()
       .justify_center()
-      .gap(rail ? 0 : 2)
-      .rounded_full()
-      .bg(open ? t.selected : t.hover)
-      .text_size(rail ? 9 : 10)
+      .gap(2)
+      .rounded(6)
+      .when(open, (el) => el.bg(t.selected))
+      .text_size(11)
       .font_medium()
       .text_color(color)
       .when(rail, (el) => el.w_full().overflow_hidden())
@@ -160,10 +181,9 @@ export default class ContextMonitor extends View {
       .when(high, (el) => el.font_bold())
       .accessibility_label(summary)
       .tooltip(empty ? `${summary}\n${EMPTY}` : summary)
-      .child(svg(`mods/${NAME}/database.svg`).size(rail ? 8 : 10).flex_none().text_color(color))
-      .when(!rail, (el) => el.child(label))
-      .child(String(members.length));
-    if (!members.length) return trigger;
+      .child(badge)
+      .when(!rail, (el) => el.child(label));
+    if (!total) return trigger;
     return Popover.new(`ctx-${id}`)
       .anchor("top_right")
       .open(open)
@@ -240,8 +260,8 @@ export default class ContextMonitor extends View {
   render() {
     const t = theme();
     const overlay = props()?.overlay;
-    const rail = !overlay && this.width < 184;
-    const showTitle = overlay || this.width >= 260;
+    const rail = !overlay && this.width < 200;
+    const showTitle = overlay || this.width >= 268;
     // Fullest first; equal ones keep the agents' own order (sort is stable).
     const shown = agents()
       .filter((a) => local(a) && this.readings[a.address])
@@ -269,8 +289,8 @@ export default class ContextMonitor extends View {
       .id("root")
       .w_full()
       .h(32)
-      .px(rail ? 1 : 6)
-      .gap(rail ? 1 : 3)
+      .px(rail ? 1 : 4)
+      .gap(rail ? 1 : 2)
       .items_center()
       .justify_center()
       .on_size_change((size, cx) => {
@@ -280,7 +300,7 @@ export default class ContextMonitor extends View {
       })
       .when(!overlay, (el) => el.bg(t.chrome).border_t(1).border_color(t.border))
       .when(Boolean(showTitle), (el) => el.child(
-        div().flex_1().min_w(0).truncate().text_size(11.5).font_medium().text_color(t.dim).child("Context Usage"),
+        div().flex_1().min_w(0).truncate().text_size(11).font_medium().text_color(t.dim).child("Context Usage"),
       ))
       .when(!this.error, (el) => el.child(
         h_flex()
