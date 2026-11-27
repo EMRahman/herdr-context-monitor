@@ -5,9 +5,10 @@
 
 See how full each Claude Code, Codex and Antigravity agent’s context window is in the
 [Herdr desktop app](https://herdr.dev). Context Monitor adds a panel under the
-Agents list or opens as a floating window. The fullest sessions appear first,
-and readings above 50% turn bold red. Hover for token counts or click a row to
-jump to that agent.
+Agents list or opens as a floating window. It shows counts for sessions at or
+below 50% and a red count for sessions above 50% when there are any. Click a
+group to expand it and see its fullest sessions first. Hover a row for token
+counts or click it to jump to that agent.
 
 ![Context Monitor ranks sessions by context used and shows the exact token count for the highlighted session](herdr-app/preview.png)
 

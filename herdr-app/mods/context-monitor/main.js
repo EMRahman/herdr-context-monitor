@@ -1,4 +1,4 @@
-// Context Monitor: how full each agent's context window is, one line per agent.
+// Context Monitor: how full each agent's context window is, grouped by usage.
 // The readings come from monitor.py beside this file, which reads the
 // transcripts of Claude Code, Codex and Antigravity on this computer.
 
@@ -44,6 +44,7 @@ export default class ContextMonitor extends View {
   init(_props, cx) {
     // terminal address -> { pct, used, window }
     this.readings = {};
+    this.expanded = new Set();
     this.error = null;
     this.width = Infinity;
     this.busy = false;
@@ -130,6 +131,42 @@ export default class ContextMonitor extends View {
     this.poll(cx);
   }
 
+  group(t, members, high, narrow) {
+    const id = high ? "ctx-high" : "ctx-low";
+    const open = this.expanded.has(id);
+    const color = high ? t.ansi1 : t.dim;
+    const label = `${high ? ">" : "≤"}${HIGH}%`;
+    const header = (narrow ? v_flex() : h_flex())
+      .id(id)
+      .h(narrow ? 32 : 28)
+      .px(narrow ? 0 : 8)
+      .flex_none()
+      .items_center()
+      .gap(narrow ? 0 : 6)
+      .rounded(8)
+      .text_size(11)
+      .font_medium()
+      .text_color(color)
+      .when(narrow, (el) => el.justify_center())
+      .when(high, (el) => el.font_bold())
+      .when(members.length > 0, (el) => el
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        // In the floating window, pressing a group should toggle it without dragging.
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click((_e, cx) => {
+          if (open) this.expanded.delete(id);
+          else this.expanded.add(id);
+          cx.notify();
+        }))
+      .child(div().child(label))
+      .child(div().child(String(members.length)))
+      .when(!narrow && members.length > 0, (el) => el
+        .child(div().flex_1())
+        .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(11).flex_none().text_color(color)));
+    return open ? [header, ...members.map((a) => this.row(t, a, this.readings[a.address], narrow))] : [header];
+  }
+
   row(t, a, r, narrow) {
     const high = r.pct > HIGH;
     const value = div()
@@ -177,8 +214,16 @@ export default class ContextMonitor extends View {
     const shown = agents()
       .filter((a) => local(a) && this.readings[a.address])
       .sort((a, b) => this.readings[b.address].pct - this.readings[a.address].pct);
+    const high = [];
+    const low = [];
+    for (const a of shown) {
+      const group = this.readings[a.address].pct > HIGH ? high : low;
+      group.push(a);
+    }
     const note = this.error ?? "Claude Code, Codex and Antigravity agents on this computer show here after their first answer.";
-    const rows = shown.map((a) => this.row(t, a, this.readings[a.address], narrow));
+    const rows = [];
+    if (high.length) rows.push(...this.group(t, high, true, narrow));
+    if (shown.length) rows.push(...this.group(t, low, false, narrow));
     const close = div()
       .id("ctx-close")
       .flex_none()
@@ -212,7 +257,7 @@ export default class ContextMonitor extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Context"))
+            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Context Usage"))
             .when(Boolean(overlay), (el) => el.child(close)),
         ),
       )
