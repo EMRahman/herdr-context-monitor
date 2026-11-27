@@ -1,1 +1,1 @@
-{ "place": "none", "title": "Context", "overlay": { "kind": "window", "key": "context-monitor", "keep": true, "width": 300 } }
+{ "place": "none", "title": "Context", "overlay": { "kind": "window", "key": "context-monitor", "keep": true, "width": 340 } }

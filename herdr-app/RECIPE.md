@@ -11,13 +11,14 @@ the agent. Dock the panel under Agents or open it as a floating window.
 Dock the panel under the Agents list in your own Herdr app layout (see
 **Built from**), or open it as a floating window.
 
-- **A window**, 300px wide and as tall as its lines, in Herdr's own window frame
+- **A window**, 340px wide and as tall as its lines, in Herdr's own window frame
   (theme background, border, rounded corners, shadow). It opens where it was
   last dropped and comes back on the next start until closed.
-- **Header**, 32px high: `Context Usage` and three database pills on one line.
-  Each pill contains a database icon and its session count. The `<25%`, `≤50%`
-  (25% through 50%), and `>50%` labels sit beside their pills in the theme's
-  foreground color. The last pill's icon and count turn red when it has readings,
+- **Header**, 32px high with 16px side padding, like the sidebar's other
+  sections: `Context Usage` (11.5px, medium, `dim`) and three database pills on
+  one line, with no divider. Each pill holds a database icon, its session count
+  (12px, medium, `foreground`; `dim` at zero) and its range in `dim`: `<25%`,
+  `≤50%` (25% through 50%) and `>50%`. The last pill's icon and count turn red when it has readings,
   with a bold count. Click a populated pill to open its list in a popover.
   The floating window has a `×` on the right.
 - **One line per agent in the open pill's list**, fullest first (highest percentage at
@@ -48,7 +49,9 @@ Dock the panel under the Agents list in your own Herdr app layout (see
 - **Drag** the window by its header.
 - Lines appear and go as agents start, end or first answer.
 - **Docked under Agents**: the 32px header uses the sidebar's `chrome` and a top
-  `border`. On narrower sidebars it prioritizes the pills. In the rail the pills
+  `border`. The title shows only where it fits whole
+  beside the pills; otherwise the pills are centred alone. Too narrow for
+  those, a rail of pills
   show the database icon and count, with the range in the tooltip. Agent lists
   scroll in the popover.
 - **When Herdr updates its `main` layout** and the panel was docked by the
@@ -60,7 +63,7 @@ Dock the panel under the Agents list in your own Herdr app layout (see
 ## Built from
 
 - `mods/context-monitor/mod.json`: `"place": "none"` and `"overlay": { "kind":
-  "window", "key": "context-monitor", "keep": true, "width": 300 }`, so
+  "window", "key": "context-monitor", "keep": true, "width": 340 }`, so
   `herdr-app do mod.open --name context-monitor` opens (and again, closes) it as a
   kept window.
 - **Docked under Agents**: Herdr's shipped layouts are read-only, so the block
@@ -72,7 +75,10 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   `checking()`); the poll runs `exec("python3", …, { timeout: 20000 })` in
   `cx.spawn` and keeps `{ address: { pct, used, window } }`. `render` reads
   `agents()`, `theme()` and `props().overlay` (window or block), and uses
-  `run("pane.focus")`, `closeOverlay`, `.tooltip`, `.on_size_change`. A docked
+  `run("pane.focus")`, `closeOverlay`, `.tooltip`, `.on_size_change`. An
+  unseen, absolutely placed copy of the full row (title, labelled pills, `×`)
+  is measured with `on_size_change` on every render, so the title and rail
+  decisions follow the current counts, error and zoom in whichever form shows. A docked
   copy reads `mods/context-monitor/.dock.json` (written by `dock.py`, if used)
   and `layouts/main.json` with `readTextFile`; when the shown layout
   (`shared("layout")`) is the one `dock.py` built and `main.json` differs from
