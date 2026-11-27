@@ -5,9 +5,9 @@
 
 See how full each Claude Code, Codex and Antigravity agent’s context window is in the
 [Herdr desktop app](https://herdr.dev). Context Monitor adds a panel under the
-Agents list or opens as a floating window. It shows counts for sessions at or
-below 50% and a red count for sessions above 50% when there are any. Click a
-group to expand it and see its fullest sessions first. Hover a row for token
+Agents list or opens as a floating window. Its header shows three database
+pills with session counts for under 25%, 25% through 50%, and over 50% used.
+Click a pill to list those sessions, fullest first. Hover a row for token
 counts or click it to jump to that agent.
 
 ![Context Monitor ranks sessions by context used and shows the exact token count for the highlighted session](herdr-app/preview.png)
@@ -37,7 +37,8 @@ If Herdr is running, the helper immediately switches to the layout it docks into
 which is `main-context` by default on a fresh install from a built-in layout.
 
 - **In your own layout, if one is on screen**, it inserts the Context block
-  after the Agents list and keeps the rest of the layout intact.
+  after the Agents list. Re-running the helper also shrinks a Context block
+  that still uses the previous default height.
 - **In `main-context`, if a built-in layout is on screen**, it clones Herdr's
   `main` layout and adds a Context section under Agents. `ctrl-shift-l` switches
   back to `main`.

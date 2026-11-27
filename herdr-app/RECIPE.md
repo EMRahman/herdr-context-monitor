@@ -14,13 +14,11 @@ Dock the panel under the Agents list in your own Herdr app layout (see
 - **A window**, 300px wide and as tall as its lines, in Herdr's own window frame
   (theme background, border, rounded corners, shadow). It opens where it was
   last dropped and comes back on the next start until closed.
-- **Header**, 34px, 16px side padding, 8px top: `Context Usage` at 11.5px medium in
-  `dim`; on the right a `×` in `dim` (`hover` behind it, `foreground` text on
-  hover) that closes the window.
-- **Usage groups** show a label and an agent count. The bold red `>50%` group
-  appears first when it has readings, followed by `≤50%`. Groups start collapsed.
-  Click a group to expand or collapse it.
-- **One line per agent in an expanded group**, fullest first (highest percentage at
+- **Header**, 32px high: `Context Usage` and three database pills on one line.
+  The pills show counts for `<25%`, `≤50%` (25% through 50%), and `>50%` used.
+  The last pill turns bold red when it has readings. Click a populated pill to
+  open its list in a popover. The floating window has a `×` on the right.
+- **One line per agent in the open pill's list**, fullest first (highest percentage at
   the top; equal ones in `agents()` order: space, tab, pane), 28px tall, radius 8, inside 8px side padding, 9px gaps, 13px text:
   - the agent's program icon, 16px (tinted with `foreground` when the program
     table says `tint`);
@@ -28,17 +26,11 @@ Dock the panel under the Agents list in your own Herdr app layout (see
     `· <title>` in `dim`, filling the rest and cut with `…`. The title drops a
     leading status glyph or spinner and Codex's `[ ! ] ` / `[ . ] ` mark;
   - on the right, `⛁ 34%` at 12px in `dim`; above 50%, in `ansi1` and bold.
-- **No readings yet**: one line at 12px in `dim`, "Claude Code, Codex and
-  Antigravity agents on this computer show here after their first answer." If `monitor.py` fails,
-  its last error line in `ansi1` takes its place.
-- **No Python**: when `python3` can't start, or is macOS's stand-in that asks to
-  install the developer tools, the line reads "Python 3 is needed to read context
-  use. On macOS, install it with: xcode-select --install. Click here to try
-  again." in `ansi1`. Polling stops until it's clicked, so macOS's install prompt
-  doesn't come back every 5 seconds. In the sidebar's rail, where there's no room for
-  the line, a bold `!` in `ansi1` takes its place, 28px tall and centered: the
-  same text as a tooltip, `hover` behind it, and clicking it tries again. Any
-  other error shows the same way.
+- **No readings yet**: the three counts are zero. Hover a pill for its range and
+  the message explaining when agents appear.
+- **Polling errors** replace the pills with a red status and show the error text
+  on hover. When Python can't start or macOS asks to install the developer tools,
+  click `Retry` (or `!` in the rail) to resume polling.
 - An agent with no reading has no line: never a guessed or `0%` value.
 
 ## How it behaves
@@ -50,14 +42,13 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   focused agent's line has `selected` behind it, and `hover` under the pointer.
 - **Hover** a line: a tooltip `Context 66% left · 68k of 200k tokens` (counts as
   `k`, or `M` from a million).
-- **Click** a line: `pane.focus {pane}` for that agent.
+- **Click** a line: close the popover and run `pane.focus {pane}` for that agent.
 - **Drag** the window by its header.
 - Lines appear and go as agents start, end or first answer.
-- **Docked under Agents** (a layout block instead of a window): it fills the
-  block with `chrome` behind it and a top `border`, like the Agents list above
-  it; its header is 41px (14px top), with no `×`, and its lines scroll. In the
-  sidebar's rail (narrower than 160px) it shows centered group labels and
-  counts, with only the percentage on each expanded agent row.
+- **Docked under Agents**: the 32px header uses the sidebar's `chrome` and a top
+  `border`. On narrower sidebars it prioritizes the pills. In the rail the pills
+  show the database icon and count, with the range in the tooltip. Agent lists
+  scroll in the popover.
 - **When Herdr updates its `main` layout** and the panel was docked by the
   repository's `herdr-app/dock.py` (below), the docked copy notices at start and
   posts one info toast per new `main`: "Herdr updated its main layout",
@@ -74,7 +65,7 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   goes in the person's own layout (for a shipped one, a clone first:
   `herdr-app do layout.clone '{"name":"main","as":"main-context"}'`), right after
   the block whose `content.mod` is `agents`, in the same column:
-  `{ "id": "context", "type": "block", "size": { "px": 132 }, "min": 41, "content": { "mod": "context-monitor" } }`.
+  `{ "id": "context", "type": "block", "size": { "px": 32 }, "min": 32, "content": { "mod": "context-monitor" } }`.
 - `main.js`: one `View`. `init` starts `cx.timer.every(5000)` (not during
   `checking()`); the poll runs `exec("python3", …, { timeout: 20000 })` in
   `cx.spawn` and keeps `{ address: { pct, used, window } }`. `render` reads
@@ -112,12 +103,12 @@ Dock the panel under the Agents list in your own Herdr app layout (see
     was appended.
 - Not part of the mod: the repository's `herdr-app/dock.py` (standard library)
   does the docking in one step for those who want it. It copies `main.js`,
-  `mod.json` and `monitor.py` into `~/.config/herdr-app/mods/context-monitor/`
+  `mod.json`, `monitor.py` and `database.svg` into `~/.config/herdr-app/mods/context-monitor/`
   and runs `herdr-app check`. Its layout: `--layout <name>`, else the one it
   used last time, else the layout on screen (`herdr-app status`) if that is a
   personal one (not an `installed.json` `layout:<name>` key) with the Agents
-  list in a column, else `main-context`. In a personal layout it only adds the
-  block above if missing, never rebuilding or fingerprinting it, and records
+  list in a column, else `main-context`. In a personal layout it adds the
+  block above if missing or shrinks the block from its old default height. It records
   `{layout, mode: "joined"}`. Moving to another layout takes the block out of
   the old one (and removes an untouched `main-context` nothing else shares).
   Otherwise it writes `layouts/main-context.json`: Herdr's current
@@ -179,8 +170,8 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   that session's `/context` (rounded), and its tooltip the same tokens.
 - A reading above 50% is bold and red; at 50% or below, `dim`.
 - Clicking a line focuses that agent's pane.
-- Docked after the `agents` block, it sits under Agents in the sidebar with its
-  own `Context` header and lines in the window's style.
+- Docked after the `agents` block, it sits under Agents in a single 32px row.
+  Each populated pill opens a list for its range and leaves the dock height fixed.
 - With the panel docked by `dock.py` and shown, a `main.json` that differs from
   the recorded one brings one "Herdr updated its main layout" toast, and none
   on the next start for the same `main`.

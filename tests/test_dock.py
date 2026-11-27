@@ -275,6 +275,23 @@ class JoinTests(DockTest):
         self.run_main()
         self.assertEqual((self.home / "layouts/herdr-with-usage.json").read_text(), before)
 
+    def test_an_existing_personal_layout_updates_the_old_default_context_height(self):
+        self.run_main()
+        joined = self.layout("herdr-with-usage")
+        block = self.lists(joined)[-1]
+        block.update(size={"px": 132}, min=41)
+        self.write_layout("herdr-with-usage", joined)
+
+        self.run_main()
+        updated = self.layout("herdr-with-usage")
+        block.update(size={"px": 32}, min=32)
+        self.assertEqual(updated, joined)
+
+        block.update(size={"px": 100}, min=41)
+        self.write_layout("herdr-with-usage", joined)
+        self.run_main()
+        self.assertEqual(self.layout("herdr-with-usage"), joined)
+
     def test_a_shipped_layout_on_screen_gets_main_context(self):
         self.status["layout"] = "main"
         self.run_main()
