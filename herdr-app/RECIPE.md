@@ -4,7 +4,7 @@ See which local Claude Code, Codex, or Antigravity sessions are filling up.
 The fullest sessions appear first. Hover for token counts or click to jump to
 the agent. Dock the panel under Agents or open it as a floating window.
 
-![Context Monitor](preview.png)
+![Context Monitor docked under the Agents list as one 32px Context Usage row of three pills; clicking the over-50% pill opens a list of those sessions, fullest first](preview.png)
 
 ## What you see
 

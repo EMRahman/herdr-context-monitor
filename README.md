@@ -10,7 +10,7 @@ pills with session counts for under 25%, 25% through 50%, and over 50% used.
 Click a pill to list those sessions, fullest first. Hover a row for token
 counts or click it to jump to that agent.
 
-![Context Monitor ranks sessions by context used and shows the exact token count for the highlighted session](herdr-app/preview.png)
+![Context Monitor docked under the Agents list as one 32px Context Usage row of three pills; clicking the over-50% pill opens a list of those sessions, fullest first](herdr-app/preview.png)
 
 ## Install
 
