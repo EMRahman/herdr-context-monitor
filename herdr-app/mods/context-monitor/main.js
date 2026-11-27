@@ -4,13 +4,16 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { Popover, v_flex, h_flex } from "gpui-base";
-import { agents, appHome, checking, closeOverlay, exec, notify, props, readTextFile, run, shared, theme } from "herdr";
+import { agents, appHome, checking, closeOverlay, exec, notify, props, readTextFile, run, settings, shared, theme } from "herdr";
 
 // This folder's name: rename it here too if the mod is installed under another.
 const NAME = "context-monitor";
 const POLL_MS = 5000;
 // Use above this share is shown in bold red: models get less reliable as their context fills.
 const HIGH = 50;
+// Side padding, as the sidebar's other sections (Spaces, Agents, Prompts) use; the gap before the pills.
+const PAD = 16;
+const TITLE_GAP = 8;
 const GROUPS = [
   { id: "low", label: "<25%", range: "Under 25% used" },
   { id: "medium", label: "≤50%", range: "25% to 50% used" },
@@ -53,6 +56,9 @@ export default class ContextMonitor extends View {
     this.openGroup = null;
     this.error = null;
     this.width = Infinity;
+    // Measured natural widths (window pixels) of the title and of what sits right of it.
+    this.titleWidth = 0;
+    this.endWidth = 0;
     this.busy = false;
     if (checking()) return;
     cx.timer.every(POLL_MS, (cx) => this.poll(cx));
@@ -138,33 +144,44 @@ export default class ContextMonitor extends View {
   }
 
   pill(t, group, members, rail, empty) {
-    const { id, range } = group;
+    const { id, label, range } = group;
     const total = members.length;
     const digits = String(total);
     const high = id === "high" && total > 0;
     const open = this.openGroup === id && total > 0;
     const color = high ? t.ansi1 : t.dim;
+    const countColor = total && !high ? t.foreground : color;
     const summary = `${range} · ${total} ${total === 1 ? "session" : "sessions"}`;
     // The rail shares its width after 1px of padding on each side and two 1px gaps.
     const railCellWidth = (this.width - 4) / GROUPS.length;
-    const countSize = rail ? Math.max(1, Math.min(9, railCellWidth / (digits.length * 0.65))) : 11;
-    const trigger = (rail ? v_flex() : h_flex())
+    const countSize = rail ? Math.max(1, Math.min(9, railCellWidth / (digits.length * 0.65))) : 12;
+    const base = (rail ? v_flex() : h_flex())
       .id(`ctx-pill-${id}`)
       .h(rail ? 26 : 22)
       .items_center()
       .justify_center()
       .rounded_full()
       .bg(open ? t.selected : t.hover)
-      .text_size(countSize)
-      .font_medium()
-      .text_color(total && !high ? t.foreground : color)
-      .when(rail, (el) => el.w_full().overflow_hidden())
-      .when(!rail, (el) => el.flex_none().px(3).gap(1))
-      .when(high, (el) => el.font_bold())
       .accessibility_label(summary)
       .tooltip(empty ? `${summary}\n${EMPTY}` : summary)
-      .child(svg(`mods/${NAME}/database.svg`).size(rail ? 9 : 11).flex_none().text_color(color))
-      .child(digits);
+      .child(svg(`mods/${NAME}/database.svg`).size(rail ? 9 : 11).flex_none().text_color(color));
+    // The rail has room for the count only; wider, the range sits in the pill after its count.
+    const trigger = rail
+      ? base
+        .w_full()
+        .overflow_hidden()
+        .text_size(countSize)
+        .font_medium()
+        .text_color(countColor)
+        .when(high, (el) => el.font_bold())
+        .child(digits)
+      : base
+        .flex_none()
+        .pl(7)
+        .pr(8)
+        .gap(4)
+        .child(div().text_size(countSize).font_medium().text_color(countColor).when(high, (el) => el.font_bold()).child(digits))
+        .child(div().text_size(11).text_color(t.dim).child(label));
     if (!total) return trigger;
     return Popover.new(`ctx-${id}`)
       .anchor("top_right")
@@ -242,8 +259,13 @@ export default class ContextMonitor extends View {
   render() {
     const t = theme();
     const overlay = props()?.overlay;
-    const rail = !overlay && this.width < 200;
-    const showTitle = overlay || this.width >= 268;
+    // Sizes from on_size_change are window pixels: scale the logical ones to match.
+    const zoom = Number(settings()?.zoom) || 1;
+    const room = this.width - 2 * PAD * zoom;
+    // Too narrow for the labelled pills: the rail shows icons and counts only.
+    const rail = !overlay && room < (this.endWidth || 200 * zoom);
+    // The title only shows whole: where it would be cut, the pills have the row.
+    const showTitle = !rail && room - TITLE_GAP * zoom - this.endWidth >= (this.titleWidth || 80 * zoom);
     // Fullest first; equal ones keep the agents' own order (sort is stable).
     const shown = agents()
       .filter((a) => local(a) && this.readings[a.address])
@@ -267,12 +289,70 @@ export default class ContextMonitor extends View {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click(() => closeOverlay(overlay))
       .child("\u00d7");
+    const status = h_flex()
+      .id("ctx-note-mark")
+      .h(22)
+      .px(8)
+      .flex_none()
+      .items_center()
+      .justify_center()
+      .rounded_full()
+      .text_size(12)
+      .font_bold()
+      .text_color(t.ansi1)
+      .hover((s) => s.bg(t.hover))
+      .accessibility_label(this.error ?? "")
+      .tooltip(this.error ?? "")
+      .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
+      .child(rail ? "!" : this.halted ? "Retry" : "Context unavailable");
+    const pills = h_flex()
+      .id("ctx-pills")
+      .gap(rail ? 1 : 4)
+      .when(rail, (el) => el.w_full())
+      .when(!rail, (el) => el.flex_none())
+      // Let the popover handle the press before it reaches the window's drag surface.
+      .when(Boolean(overlay), (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation()))
+      .children(GROUPS.map((group, i) => {
+        const pill = this.pill(t, group, buckets[i], rail, shown.length === 0);
+        return rail ? div().flex_1().min_w(0).child(pill) : pill;
+      }));
+    // Everything right of the title, measured at its own width so the title knows what's left.
+    const end = h_flex()
+      .id("ctx-end")
+      .items_center()
+      .gap(4)
+      .when(rail, (el) => el.w_full())
+      .when(!rail, (el) => el.flex_none().on_size_change((size, cx) => {
+        if (size.width === this.endWidth) return;
+        this.endWidth = size.width;
+        cx.notify();
+      }))
+      .child(this.error ? status : pills)
+      .when(Boolean(overlay), (el) => el.child(close));
+    const title = h_flex()
+      .flex_1()
+      .min_w(0)
+      .overflow_hidden()
+      .child(
+        div()
+          .id("ctx-title")
+          .flex_none()
+          .text_size(11.5)
+          .font_medium()
+          .text_color(t.dim)
+          .on_size_change((size, cx) => {
+            if (size.width === this.titleWidth) return;
+            this.titleWidth = size.width;
+            cx.notify();
+          })
+          .child("Context Usage"),
+      );
     return h_flex()
       .id("root")
       .w_full()
       .h(32)
-      .px(rail ? 1 : 4)
-      .gap(rail ? 1 : 2)
+      .px(rail ? 1 : PAD)
+      .gap(TITLE_GAP)
       .items_center()
       .justify_center()
       .on_size_change((size, cx) => {
@@ -281,48 +361,7 @@ export default class ContextMonitor extends View {
         cx.notify();
       })
       .when(!overlay, (el) => el.bg(t.chrome).border_t(1).border_color(t.border))
-      .when(Boolean(showTitle), (el) => el.child(
-        div().flex_1().min_w(0).truncate().text_size(11).font_medium().text_color(t.dim).child("Context Usage"),
-      ))
-      .when(!this.error, (el) => el.child(
-        h_flex()
-          .id("ctx-pills")
-          .gap(rail ? 1 : 3)
-          .when(rail, (el) => el.w_full())
-          .when(!rail, (el) => el.flex_none())
-          // Let the popover handle the press before it reaches the window's drag surface.
-          .when(Boolean(overlay), (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation()))
-          .children(GROUPS.map((group, i) => {
-            const pill = this.pill(t, group, buckets[i], rail, shown.length === 0);
-            if (rail) return div().flex_1().min_w(0).child(pill);
-            return h_flex()
-              .items_center()
-              .gap(2)
-              .flex_none()
-              .child(pill)
-              .child(div().text_size(11).text_color(t.foreground).child(group.label));
-          })),
-      ))
-      .when(Boolean(this.error), (el) =>
-        el.child(
-          h_flex()
-            .id("ctx-note-mark")
-            .h(22)
-            .px(8)
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .rounded(8)
-            .text_size(12)
-            .font_bold()
-            .text_color(t.ansi1)
-            .hover((s) => s.bg(t.hover))
-            .accessibility_label(this.error)
-            .tooltip(this.error)
-            .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
-            .child(rail ? "!" : this.halted ? "Retry" : "Context unavailable"),
-        ),
-      )
-      .when(Boolean(overlay), (el) => el.child(close));
+      .when(showTitle, (el) => el.child(title))
+      .child(end);
   }
 }
