@@ -11,7 +11,6 @@ const NAME = "context-monitor";
 const POLL_MS = 5000;
 // Use above this share is shown in bold red: models get less reliable as their context fills.
 const HIGH = 50;
-const BADGE_SIZE = 28;
 const GROUPS = [
   { id: "low", label: "<25%", range: "Under 25% used" },
   { id: "medium", label: "≤50%", range: "25% to 50% used" },
@@ -139,50 +138,33 @@ export default class ContextMonitor extends View {
   }
 
   pill(t, group, members, rail, empty) {
-    const { id, label, range } = group;
+    const { id, range } = group;
     const total = members.length;
     const digits = String(total);
     const high = id === "high" && total > 0;
     const open = this.openGroup === id && total > 0;
     const color = high ? t.ansi1 : t.dim;
     const summary = `${range} · ${total} ${total === 1 ? "session" : "sessions"}`;
-    // The rail divides its width among the three groups with 1px padding and gaps.
-    const size = rail ? Math.min(BADGE_SIZE, Math.max(0, Math.floor((this.width - 4) / GROUPS.length))) : BADGE_SIZE;
-    const countSize = Math.min(Math.max(8, Math.round(size * 0.46)), size / (digits.length * 0.75));
-    const badge = div()
-      .relative()
-      .size(size)
-      .flex_none()
-      .child(svg(`mods/${NAME}/database.svg`).size(size).text_color(color))
-      .child(h_flex()
-        .absolute()
-        .inset_0()
-        .pt(size / 4)
-        .items_center()
-        .justify_center()
-        .text_size(countSize)
-        .line_height(1)
-        .font_bold()
-        .text_color(total && !high ? t.foreground : color)
-        .child(digits));
-    const trigger = h_flex()
+    // The rail shares its width after 1px of padding on each side and two 1px gaps.
+    const railCellWidth = (this.width - 4) / GROUPS.length;
+    const countSize = rail ? Math.max(1, Math.min(9, railCellWidth / (digits.length * 0.65))) : 11;
+    const trigger = (rail ? v_flex() : h_flex())
       .id(`ctx-pill-${id}`)
-      .h(30)
+      .h(rail ? 26 : 22)
       .items_center()
       .justify_center()
-      .gap(2)
-      .rounded(6)
-      .when(open, (el) => el.bg(t.selected))
-      .text_size(11)
+      .rounded_full()
+      .bg(open ? t.selected : t.hover)
+      .text_size(countSize)
       .font_medium()
-      .text_color(color)
+      .text_color(total && !high ? t.foreground : color)
       .when(rail, (el) => el.w_full().overflow_hidden())
-      .when(!rail, (el) => el.flex_none())
+      .when(!rail, (el) => el.flex_none().px(3).gap(1))
       .when(high, (el) => el.font_bold())
       .accessibility_label(summary)
       .tooltip(empty ? `${summary}\n${EMPTY}` : summary)
-      .child(badge)
-      .when(!rail, (el) => el.child(label));
+      .child(svg(`mods/${NAME}/database.svg`).size(rail ? 9 : 11).flex_none().text_color(color))
+      .child(digits);
     if (!total) return trigger;
     return Popover.new(`ctx-${id}`)
       .anchor("top_right")
@@ -312,7 +294,13 @@ export default class ContextMonitor extends View {
           .when(Boolean(overlay), (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation()))
           .children(GROUPS.map((group, i) => {
             const pill = this.pill(t, group, buckets[i], rail, shown.length === 0);
-            return rail ? div().flex_1().min_w(0).child(pill) : pill;
+            if (rail) return div().flex_1().min_w(0).child(pill);
+            return h_flex()
+              .items_center()
+              .gap(2)
+              .flex_none()
+              .child(pill)
+              .child(div().text_size(11).text_color(t.foreground).child(group.label));
           })),
       ))
       .when(Boolean(this.error), (el) =>

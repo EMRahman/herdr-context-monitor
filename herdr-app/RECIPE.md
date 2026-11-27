@@ -15,10 +15,11 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   (theme background, border, rounded corners, shadow). It opens where it was
   last dropped and comes back on the next start until closed.
 - **Header**, 32px high: `Context Usage` and three database pills on one line.
-  Each database icon contains its session count, with `<25%`, `≤50%` (25%
-  through 50%), or `>50%` beside it.
-  The last pill turns bold red when it has readings. Click a populated pill to
-  open its list in a popover. The floating window has a `×` on the right.
+  Each pill contains a database icon and its session count. The `<25%`, `≤50%`
+  (25% through 50%), and `>50%` labels sit beside their pills in the theme's
+  foreground color. The last pill's icon and count turn red when it has readings,
+  with a bold count. Click a populated pill to open its list in a popover.
+  The floating window has a `×` on the right.
 - **One line per agent in the open pill's list**, fullest first (highest percentage at
   the top; equal ones in `agents()` order: space, tab, pane), 28px tall, radius 8, inside 8px side padding, 9px gaps, 13px text:
   - the agent's program icon, 16px (tinted with `foreground` when the program
