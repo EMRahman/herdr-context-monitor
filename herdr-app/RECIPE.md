@@ -50,8 +50,8 @@ Dock the panel under the Agents list in your own Herdr app layout (see
 - Lines appear and go as agents start, end or first answer.
 - **Docked under Agents**: the 32px header uses the sidebar's `chrome` and a top
   `border`. The title shows only where it fits whole
-  beside the pills (both measured with `on_size_change`); otherwise the pills
-  are centred alone. Too narrow for those, a rail of pills
+  beside the pills; otherwise the pills are centred alone. Too narrow for
+  those, a rail of pills
   show the database icon and count, with the range in the tooltip. Agent lists
   scroll in the popover.
 - **When Herdr updates its `main` layout** and the panel was docked by the
@@ -75,7 +75,10 @@ Dock the panel under the Agents list in your own Herdr app layout (see
   `checking()`); the poll runs `exec("python3", …, { timeout: 20000 })` in
   `cx.spawn` and keeps `{ address: { pct, used, window } }`. `render` reads
   `agents()`, `theme()` and `props().overlay` (window or block), and uses
-  `run("pane.focus")`, `closeOverlay`, `.tooltip`, `.on_size_change`. A docked
+  `run("pane.focus")`, `closeOverlay`, `.tooltip`, `.on_size_change`. An
+  unseen, absolutely placed copy of the full row (title, labelled pills, `×`)
+  is measured with `on_size_change` on every render, so the title and rail
+  decisions follow the current counts, error and zoom in whichever form shows. A docked
   copy reads `mods/context-monitor/.dock.json` (written by `dock.py`, if used)
   and `layouts/main.json` with `readTextFile`; when the shown layout
   (`shared("layout")`) is the one `dock.py` built and `main.json` differs from
