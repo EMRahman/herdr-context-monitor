@@ -50,7 +50,8 @@ BUILT = APP_HOME / "mods" / MOD / ".dock-main-context.json"
 # What the layout's root says about its shape; every other root key is look (theme, fonts, ...).
 STRUCTURE = ("id", "type", "children", "cloned_from")
 # The mod: what installing copies (not herdr-app check's type files, not the record).
-MOD_FILES = ("main.js", "mod.json", "monitor.py")
+MOD_FILES = ("main.js", "mod.json", "monitor.py", "database.svg")
+HEADER_HEIGHT = 32
 
 
 class DockError(Exception):
@@ -132,10 +133,14 @@ def save_record(record):
     RECORD.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
 
-def ids(node):
-    yield node.get("id")
+def walk(node):
+    yield node
     for child in node.get("children") or []:
-        yield from ids(child)
+        yield from walk(child)
+
+
+def ids(node):
+    return (child.get("id") for child in walk(node))
 
 
 def installed():
@@ -251,7 +256,7 @@ def is_ours(node):
 
 
 def has_ours(node):
-    return is_ours(node) or any(has_ours(child) for child in node.get("children") or [])
+    return any(is_ours(child) for child in walk(node))
 
 
 def add_block(doc, where, reserved=()):
@@ -266,7 +271,8 @@ def add_block(doc, where, reserved=()):
     names = ("context", "context-monitor", *(f"context-monitor-{n}" for n in range(2, 1000)))
     block_id = next(i for i in names if i not in taken)
     column["children"].insert(column["children"].index(agents) + 1, {
-        "id": block_id, "type": "block", "size": {"px": 132}, "min": 41, "content": {"mod": MOD},
+        "id": block_id, "type": "block", "size": {"px": HEADER_HEIGHT}, "min": HEADER_HEIGHT,
+        "content": {"mod": MOD},
     })
 
 
@@ -429,12 +435,19 @@ def choose(explicit):
 
 
 def join(name, show=True):
-    """Adds the block to another's personal layout if it isn't there; that layout stays theirs."""
+    """Adds the block or updates its old default height in a personal layout."""
     text = read(layout_path(name))
     doc = json.loads(text)
     changed = not has_ours(doc)
     if changed:
         add_block(doc, f"layouts/{name}.json")
+    else:
+        for node in walk(doc):
+            if is_ours(node) and node.get("size") == {"px": 132} and node.get("min") == 41:
+                node["size"] = {"px": HEADER_HEIGHT}
+                node["min"] = HEADER_HEIGHT
+                changed = True
+    if changed:
         write_layout(doc, text, name)
     save_record({"layout": name, "mode": "joined", "helper": str(Path(__file__).resolve())})
     if show:

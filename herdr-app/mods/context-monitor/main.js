@@ -3,7 +3,7 @@
 // transcripts of Claude Code, Codex and Antigravity on this computer.
 
 import { View, div, image, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { Popover, v_flex, h_flex } from "gpui-base";
 import { agents, appHome, checking, closeOverlay, exec, notify, props, readTextFile, run, shared, theme } from "herdr";
 
 // This folder's name: rename it here too if the mod is installed under another.
@@ -11,6 +11,12 @@ const NAME = "context-monitor";
 const POLL_MS = 5000;
 // Use above this share is shown in bold red: models get less reliable as their context fills.
 const HIGH = 50;
+const GROUPS = [
+  { id: "low", label: "<25%", range: "Under 25% used" },
+  { id: "medium", label: "≤50%", range: "25% to 50% used" },
+  { id: "high", label: ">50%", range: "Over 50% used" },
+];
+const EMPTY = "Claude Code, Codex and Antigravity agents on this computer show here after their first answer.";
 
 // Drops what an agent puts before its title: a status glyph or spinner and the separator
 // after it, and Codex's blinking "[ ! ] " / "[ . ] " mark.
@@ -44,7 +50,7 @@ export default class ContextMonitor extends View {
   init(_props, cx) {
     // terminal address -> { pct, used, window }
     this.readings = {};
-    this.expanded = new Set();
+    this.openGroup = null;
     this.error = null;
     this.width = Infinity;
     this.busy = false;
@@ -131,50 +137,73 @@ export default class ContextMonitor extends View {
     this.poll(cx);
   }
 
-  group(t, members, high, narrow) {
-    const id = high ? "ctx-high" : "ctx-low";
-    const open = this.expanded.has(id);
+  pill(t, group, members, rail, empty) {
+    const { id, label, range } = group;
+    const high = id === "high" && members.length > 0;
+    const open = this.openGroup === id && members.length > 0;
     const color = high ? t.ansi1 : t.dim;
-    const label = `${high ? ">" : "≤"}${HIGH}%`;
-    const header = (narrow ? v_flex() : h_flex())
-      .id(id)
-      .h(narrow ? 32 : 28)
-      .px(narrow ? 0 : 8)
-      .flex_none()
+    const summary = `${range} · ${members.length} ${members.length === 1 ? "session" : "sessions"}`;
+    const trigger = (rail ? v_flex() : h_flex())
+      .id(`ctx-pill-${id}`)
+      .h(rail ? 26 : 22)
+      .px(rail ? 0 : 4)
       .items_center()
-      .gap(narrow ? 0 : 6)
-      .rounded(8)
-      .text_size(11)
+      .justify_center()
+      .gap(rail ? 0 : 2)
+      .rounded_full()
+      .bg(open ? t.selected : t.hover)
+      .text_size(rail ? 9 : 10)
       .font_medium()
       .text_color(color)
-      .when(narrow, (el) => el.justify_center())
+      .when(rail, (el) => el.w_full().overflow_hidden())
+      .when(!rail, (el) => el.flex_none())
       .when(high, (el) => el.font_bold())
-      .when(members.length > 0, (el) => el
+      .accessibility_label(summary)
+      .tooltip(empty ? `${summary}\n${EMPTY}` : summary)
+      .child(svg(`mods/${NAME}/database.svg`).size(rail ? 8 : 10).flex_none().text_color(color))
+      .when(!rail, (el) => el.child(label))
+      .child(String(members.length));
+    if (!members.length) return trigger;
+    return Popover.new(`ctx-${id}`)
+      .anchor("top_right")
+      .open(open)
+      .on_open_change((next, cx) => {
+        if (next) this.openGroup = id;
+        else if (this.openGroup === id) this.openGroup = null;
+        cx.notify();
+      })
+      .trigger(trigger
         .cursor_pointer()
-        .hover((s) => s.bg(t.hover))
-        // In the floating window, pressing a group should toggle it without dragging.
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .on_click((_e, cx) => {
-          if (open) this.expanded.delete(id);
-          else this.expanded.add(id);
-          cx.notify();
-        }))
-      .child(div().child(label))
-      .child(div().child(String(members.length)))
-      .when(!narrow && members.length > 0, (el) => el
-        .child(div().flex_1())
-        .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(11).flex_none().text_color(color)));
-    return open ? [header, ...members.map((a) => this.row(t, a, this.readings[a.address], narrow))] : [header];
+        .hover((s) => s.bg(t.selected))
+      )
+      .when(open, (el) => el.content(
+        v_flex()
+          .w(280)
+          .p(4)
+          .text_size(13)
+          .rounded(8)
+          .border_1()
+          .border_color(t.border)
+          .bg(t.popover)
+          .shadow_sm()
+          .child(
+            v_flex()
+              .id(`ctx-list-${id}`)
+              .max_h(224)
+              .overflow_y_scrollbar()
+              .children(members.map((a) => this.row(t, a, this.readings[a.address]))),
+          ),
+      ));
   }
 
-  row(t, a, r, narrow) {
+  row(t, a, r) {
     const high = r.pct > HIGH;
     const value = div()
       .flex_none()
       .text_size(12)
       .text_color(high ? t.ansi1 : t.dim)
       .when(high, (el) => el.font_bold())
-      .child(narrow ? `${r.pct}%` : `⛁ ${r.pct}%`);
+      .child(`⛁ ${r.pct}%`);
     const el = h_flex()
       .id(`ctx-${a.address}`)
       .h(28)
@@ -187,8 +216,11 @@ export default class ContextMonitor extends View {
       .cursor_pointer()
       .hover((s) => s.bg(t.hover))
       .tooltip(`Context ${100 - r.pct}% left · ${count(r.used)} of ${count(r.window)} tokens`)
-      .on_click(() => run("pane.focus", { pane: a.pane }));
-    if (narrow) return el.justify_center().child(value);
+      .on_click((_e, cx) => {
+        this.openGroup = null;
+        cx.notify();
+        run("pane.focus", { pane: a.pane });
+      });
     const pic = icon(a.program, 16, t.foreground);
     const detail = clean(a.title);
     return el
@@ -207,23 +239,19 @@ export default class ContextMonitor extends View {
 
   render() {
     const t = theme();
-    // A floating window (mod.open) fits its rows; a layout block fills its space.
     const overlay = props()?.overlay;
-    const narrow = !overlay && this.width < 160;
+    const rail = !overlay && this.width < 184;
+    const showTitle = overlay || this.width >= 260;
     // Fullest first; equal ones keep the agents' own order (sort is stable).
     const shown = agents()
       .filter((a) => local(a) && this.readings[a.address])
       .sort((a, b) => this.readings[b.address].pct - this.readings[a.address].pct);
-    const high = [];
-    const low = [];
+    const buckets = [[], [], []];
     for (const a of shown) {
-      const group = this.readings[a.address].pct > HIGH ? high : low;
-      group.push(a);
+      const pct = this.readings[a.address].pct;
+      buckets[pct < 25 ? 0 : pct <= HIGH ? 1 : 2].push(a);
     }
-    const note = this.error ?? "Claude Code, Codex and Antigravity agents on this computer show here after their first answer.";
-    const rows = [];
-    if (high.length) rows.push(...this.group(t, high, true, narrow));
-    if (shown.length) rows.push(...this.group(t, low, false, narrow));
+    if (!GROUPS.some(({ id }, i) => id === this.openGroup && buckets[i].length)) this.openGroup = null;
     const close = div()
       .id("ctx-close")
       .flex_none()
@@ -237,49 +265,42 @@ export default class ContextMonitor extends View {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click(() => closeOverlay(overlay))
       .child("\u00d7");
-    return v_flex()
+    return h_flex()
       .id("root")
+      .w_full()
+      .h(32)
+      .px(rail ? 1 : 6)
+      .gap(rail ? 1 : 3)
+      .items_center()
+      .justify_center()
       .on_size_change((size, cx) => {
         if (size.width === this.width) return;
         this.width = size.width;
         cx.notify();
       })
-      .when(!overlay, (el) => el.size_full().min_h(0).bg(t.chrome).border_t(1).border_color(t.border))
-      .when(Boolean(overlay), (el) => el.w_full().pb(6))
-      .text_size(13)
-      .when(!narrow, (el) =>
-        el.child(
-          h_flex()
-            .px(16)
-            .h(overlay ? 34 : 41)
-            .pt(overlay ? 8 : 14)
-            .pb(5)
-            .flex_none()
-            .items_center()
-            .justify_between()
-            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Context Usage"))
-            .when(Boolean(overlay), (el) => el.child(close)),
-        ),
-      )
-      .when(!shown.length && !narrow, (el) =>
-        el.child(
-          div()
-            .id("ctx-note")
-            .px(16)
-            .pb(overlay ? 4 : 0)
-            .text_size(12)
-            .text_color(this.error ? t.ansi1 : t.dim)
-            .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
-            .child(note),
-        ),
-      )
-      // The rail has no room for the note: a red mark that says it on hover (and retries, when
-      // polling stopped for want of Python).
-      .when(narrow && Boolean(this.error), (el) =>
+      .when(!overlay, (el) => el.bg(t.chrome).border_t(1).border_color(t.border))
+      .when(Boolean(showTitle), (el) => el.child(
+        div().flex_1().min_w(0).truncate().text_size(11.5).font_medium().text_color(t.dim).child("Context Usage"),
+      ))
+      .when(!this.error, (el) => el.child(
+        h_flex()
+          .id("ctx-pills")
+          .gap(rail ? 1 : 3)
+          .when(rail, (el) => el.w_full())
+          .when(!rail, (el) => el.flex_none())
+          // Let the popover handle the press before it reaches the window's drag surface.
+          .when(Boolean(overlay), (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation()))
+          .children(GROUPS.map((group, i) => {
+            const pill = this.pill(t, group, buckets[i], rail, shown.length === 0);
+            return rail ? div().flex_1().min_w(0).child(pill) : pill;
+          })),
+      ))
+      .when(Boolean(this.error), (el) =>
         el.child(
           h_flex()
             .id("ctx-note-mark")
-            .h(28)
+            .h(22)
+            .px(8)
             .flex_none()
             .items_center()
             .justify_center()
@@ -288,14 +309,12 @@ export default class ContextMonitor extends View {
             .font_bold()
             .text_color(t.ansi1)
             .hover((s) => s.bg(t.hover))
+            .accessibility_label(this.error)
             .tooltip(this.error)
             .when(this.halted, (el) => el.cursor_pointer().on_click((_e, cx) => this.retry(cx)))
-            .child("!"),
+            .child(rail ? "!" : this.halted ? "Retry" : "Context unavailable"),
         ),
       )
-      .when(Boolean(overlay), (el) => el.child(v_flex().px(8).children(rows)))
-      .when(!overlay, (el) =>
-        el.child(v_flex().id("ctx-list").flex_1().min_h(0).px(narrow ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows)),
-      );
+      .when(Boolean(overlay), (el) => el.child(close));
   }
 }
